@@ -1,0 +1,8 @@
+bin/
+data/
+obj/
+refdata/
+tools/
+torrents/
+.idea/
+.DS_Store
