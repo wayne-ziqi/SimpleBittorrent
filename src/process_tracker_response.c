@@ -49,7 +49,6 @@ tracker_response *preprocess_tracker_response(int sockfd) {
     memset(rcvline, 0xFF, MAXLINE);
     memset(tmp, 0x0, MAXLINE);
 
-
     // Content-Length
     len = recv(sockfd, rcvline, 16, 0);
     if (len <= 0) {
@@ -85,20 +84,36 @@ tracker_response *preprocess_tracker_response(int sockfd) {
     printf("NUMBER RECEIVED: %d\n", datasize);
     memset(rcvline, 0xFF, MAXLINE);
     memset(num, 0x0, MAXLINE);
-    // 读取Content-type和Pragma行
+
     // Pragma
-    len = recv(sockfd, rcvline, 18, 0);
-    if (len <= 0) {
-        perror("Error, cannot read socket from tracker");
-        exit(-6);
-    }
+//    len = recv(sockfd, rcvline, 18, 0);
+//    if (len <= 0) {
+//        perror("Error, cannot read socket from tracker");
+//        exit(-6);
+//    }
+//    strncpy(tmp, rcvline, 26);
+//    if (strncmp(tmp, "Pragma: no-cache\r\n", strlen("Pragma: no-cache\r\n"))) {
+//        perror("Error, didn't match Pragma line");
+//        fprintf(stderr, "LINE: %s\n", tmp);
+//        exit(-6);
+//    }
+//    memset(rcvline, 0xFF, MAXLINE);
+//    memset(tmp, 0x0, MAXLINE);
+
     // 去除响应中额外的\r\n空行
     len = recv(sockfd, rcvline, 2, 0);
     if (len <= 0) {
         perror("Error, cannot read socket from tracker");
         exit(-6);
     }
-
+    strncpy(tmp, rcvline, 2);
+    if (strncmp(tmp, "\r\n", strlen("\r\n"))) {
+        perror("Error, didn't match empty line");
+        fprintf(stderr, "LINE: %s\n", tmp);
+        exit(-6);
+    }
+    memset(rcvline, 0xFF, MAXLINE);
+    memset(tmp, 0x0, MAXLINE);
     // 分配空间并读取数据, 为结尾的\0预留空间
     int i;
     data = (char *) malloc((datasize + 1) * sizeof(char));
@@ -111,8 +126,12 @@ tracker_response *preprocess_tracker_response(int sockfd) {
     }
     data[datasize] = '\0';
 
-    for (i = 0; i < datasize; i++)
-        printf("%c", data[i]);
+    for (i = 0; i < datasize; i++) {
+        // note: some characters may be unprintable
+        if (data[i] >= 0x20 && data[i] <= 0x7F)
+            printf("%c", data[i]);
+        else printf("%02X", data[i]);
+    }
     printf("\n");
 
     // 分配, 填充并返回tracker_response结构.
@@ -147,7 +166,6 @@ tracker_data *get_tracker_data(char *data, int len) {
     // 遍历键并测试它们
     int i;
     for (i = 0; ben_res->val.d[i].val != NULL; i++) {
-        //printf("%s\n",ben_res->val.d[i].key);
         // 检查是否有失败键
         if (!strncmp(ben_res->val.d[i].key, "failure reason", strlen("failure reason"))) {
             printf("Error: %s", ben_res->val.d[i].val->val.s);
@@ -162,6 +180,7 @@ tracker_data *get_tracker_data(char *data, int len) {
             be_node *peer_list = ben_res->val.d[i].val;
             get_peers(ret, peer_list);
         }
+//        printf("Key: %s done\n", ben_res->val.d[i].key);
     }
 
     be_free(ben_res);
@@ -170,19 +189,18 @@ tracker_data *get_tracker_data(char *data, int len) {
 }
 
 // 处理来自Tracker的字典模式的peer列表
+// modify: peer is sent by tracker as string, not dictionary
 void get_peers(tracker_data *td, be_node *peer_list) {
     int i;
     int numpeers = 0;
 
+    assert(peer_list->type == BE_STR);
     // 计算列表中的peer数
-    for (i = 0; peer_list->val.l[i] != NULL; i++) {
-        // 确认元素是一个字典
-        if (peer_list->val.l[i]->type != BE_DICT) {
-            perror("Expecting dict, got something else");
-            exit(-12);
-        }
-
-        // 找到一个peer, 增加numpeers
+    char *peer_str = peer_list->val.s;
+    long long int peer_len = be_str_len(peer_list);
+    printf("Peer string: %s, length: %lld\n", peer_str, peer_len);
+    assert(peer_len % 6 == 0);
+    for (i = 0; i < peer_len; i += 6) {
         numpeers++;
     }
 
@@ -197,12 +215,9 @@ void get_peers(tracker_data *td, be_node *peer_list) {
     }
 
     // 获取每个peer的数据
-    for (i = 0; peer_list->val.l[i] != NULL; i++) {
-        get_peer_data(&(td->peers[i]), peer_list->val.l[i]);
+    for (i = 0; i < numpeers; i++) {
+        get_peer_data_str(&(td->peers[i]), peer_str + i * 6);
     }
-
-    return;
-
 }
 
 // 给出一个peerdata的指针和一个peer的字典数据, 填充peerdata结构
@@ -245,4 +260,15 @@ void get_peer_data(peerdata *peer, be_node *ben_res) {
             peer->port = ben_res->val.d[i].val->val.i;
         }
     }
+}
+
+void get_peer_data_str(peerdata *peer, char* peer_str){
+    unsigned int ip;
+    unsigned short port;
+    memcpy(&ip, peer_str, 4);
+    memcpy(&port, peer_str + 4, 2);
+    peer->ip = (char *) malloc(16 * sizeof(char));
+    sprintf(peer->ip, "%d.%d.%d.%d", ip & 0xff, (ip >> 8) & 0xff, (ip >> 16) & 0xff, (ip >> 24) & 0xff);
+    peer->port = ntohs(port);
+    printf("Peer ip: %s, Peer port: %d\n", peer->ip, peer->port);
 }

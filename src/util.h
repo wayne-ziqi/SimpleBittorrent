@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <unistd.h>
 #include <string.h>
+#include <assert.h>
 
 #include "btdata.h"
 #include "bencode.h"
@@ -43,6 +44,7 @@ tracker_response* preprocess_tracker_response(int sockfd);
 tracker_data* get_tracker_data(char* data, int len);
 void get_peers(tracker_data* td, be_node* peer_list); // 上面函数的辅助函数
 void get_peer_data(peerdata* peer, be_node* ben_res); // 上面函数的辅助函数
+void get_peer_data_str(peerdata *peer, char* peer_str); // 上面函数的辅助函数
 
 // 制作一个发送给Tracker的HTTP请求, 返回该字符串
 char* make_tracker_request(int event, int* mlen);
