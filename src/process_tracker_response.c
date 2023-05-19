@@ -15,7 +15,6 @@ tracker_response *preprocess_tracker_response(int sockfd) {
     char tmp[MAXLINE];
     char *data;
     int len;
-    int offset = 0;
     int datasize = -1;
     printf("Reading tracker response...\n");
     // HTTP LINE

@@ -1,12 +1,13 @@
 
 CC=gcc
-CFLAGS= -std=c99 -g
-LIBS= -lpthread
+CFLAGS= -std=c99 -g -D_GNU_SOURCE -Wall
+LIBS= -pthread
 TARGET=simpletorrent
 SOURCES=src/util.c \
 		src/bencode.c \
 		src/sha1.c \
 		src/shutdown.c \
+		src/pwp.c \
 		src/make_tracker_request.c \
 		src/parse_announce_url.c \
 		src/parsetorrentfile.c \

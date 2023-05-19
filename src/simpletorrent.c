@@ -9,58 +9,65 @@
 #include "util.h"
 #include "btdata.h"
 #include "bencode.h"
+#include "pwp.h"
 
 //#define MAXLINE 4096 
 // pthread数据
 
-void init() {
+void init(int argc, char **argv) {
+    assert(argc >= 4);
     g_done = 0;
     g_tracker_response = NULL;
+    srand(time(NULL));
+    int val[5];
+    for (int i = 0; i < 5; i++) {
+        val[i] = rand();
+    }
+    memcpy(g_my_id, (char *) val, 20);
+    strncpy(g_my_ip, argv[2], strlen(argv[2]));
+    g_my_ip[strlen(argv[2]) + 1] = '\0';
+    g_filename = argv[3];
+    g_torrentmeta = parsetorrentfile(argv[1]);
+    memcpy(g_infohash, g_torrentmeta->info_hash, 20);
+    g_filelen = g_torrentmeta->length;
+    g_num_pieces = g_torrentmeta->num_pieces;
+    g_filedata = (char *) malloc(g_filelen * sizeof(char));
+    g_peerport = 2706;
+    g_uploaded = 0;
+    g_downloaded = 0;
 }
 
 int main(int argc, char **argv) {
     int sockfd = -1;
     char rcvline[MAXLINE];
     char tmp[MAXLINE];
-    FILE *f;
-    int rc;
+
     int i;
 
 // 注意: 你可以根据自己的需要修改这个程序的使用方法
     if (argc < 4) {
-        printf("Usage: SimpleTorrent <torrent file> <ip of this machine (XXX.XXX.XXX.XXX form)> <downloaded file location> [isseed]\n");
-        printf("\t isseed is optional, 1 indicates this is a seed and won't contact other clients\n");
+        printf("Usage: SimpleTorrent <torrent file> <ip of this machine (XXX.XXX.XXX.XXX form)> <downloaded file location> [g_isseed]\n");
+        printf("\t g_isseed is optional, 1 indicates this is a seed and won't contact other clients\n");
         printf("\t 0 indicates a downloading client and will connect to other clients and receive connections\n");
         exit(-1);
     }
 
-    int iseed = 0;
+    g_isseed = 0;
     if (argc > 4) {
-        iseed = atoi(argv[4]) != 0;
+        g_isseed = atoi(argv[4]) != 0;
     }
-
-    if (iseed) {
+    init(argc, argv);
+    if (access(argv[3], F_OK) != -1) {
+        g_isseed = 1;
+        printf("File already exists, running as seed.\n");
+    }
+    if (g_isseed) {
+        g_left = 0;
         printf("SimpleTorrent running as seed.\n");
+    } else {
+        g_left = g_torrentmeta->num_pieces;
+        printf("SimpleTorrent running as client.\n");
     }
-
-    init();
-    srand(time(NULL));
-
-    int val[5];
-    for (i = 0; i < 5; i++) {
-        val[i] = rand();
-    }
-    memcpy(g_my_id, (char *) val, 20);
-    strncpy(g_my_ip, argv[2], strlen(argv[2]));
-    g_my_ip[strlen(argv[2]) + 1] = '\0';
-
-    g_filename = argv[3];
-
-    g_torrentmeta = parsetorrentfile(argv[1]);
-    memcpy(g_infohash, g_torrentmeta->info_hash, 20);
-    g_filelen = g_torrentmeta->length;
-    g_num_pieces = g_torrentmeta->num_pieces;
-    g_filedata = (char *) malloc(g_filelen * sizeof(char));
 
     announce_url_t *announce_info;
     announce_info = parse_announce_url(g_torrentmeta->announce);
@@ -86,6 +93,9 @@ int main(int argc, char **argv) {
     signal(SIGINT, client_shutdown);
 
     // 设置监听peer的线程
+
+    pthread_t listen_thread;
+    pthread_create(&listen_thread, NULL, upload_for_peers, NULL);
 
     // 定期联系Tracker服务器
     int firsttime = 1;
@@ -147,6 +157,9 @@ int main(int argc, char **argv) {
             printf("\n");
             printf("Peer ip: %s\n", g_tracker_response->peers[i].ip);
             printf("Peer port: %d\n", g_tracker_response->peers[i].port);
+            if (!g_isseed) {
+                // TODO: connect to peer to download
+            }
         }
 
         // 必须等待td->interval秒, 然后再发出下一个GET请求

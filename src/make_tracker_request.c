@@ -19,8 +19,6 @@ char *make_tracker_request(int event, int *mlen) {
     cur += strlen("GET /announce?");
 
     // 填入info_hash
-    char hexdigs[16] = {'0', '1', '2', '3', '4', '5', '6', '7',
-                        '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
     strcpy(cur, "info_hash=");
     cur += strlen("info_hash=");
     for (i = 0; i < 5; i++) {
@@ -39,7 +37,6 @@ char *make_tracker_request(int event, int *mlen) {
     }
 
     // Peer id
-    int num;
     strcpy(cur, "&peer_id=");
     cur += strlen("&peer_id=");
     for (i = 0; i < 20; i++) {

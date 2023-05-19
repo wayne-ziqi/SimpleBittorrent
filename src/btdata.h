@@ -8,14 +8,14 @@
 /**************************************
  * 一些常量定义
 **************************************/
-/*
+
 #define HANDSHAKE_LEN 68  // peer握手消息的长度, 以字节为单位
-#define BT_PROTOCOL "BitTorrent protocol"
+#define BT_PROTOCOL_STR "BitTorrent protocol"
 #define INFOHASH_LEN 20
 #define PEER_ID_LEN 20
 #define MAXPEERS 100
 #define KEEP_ALIVE_INTERVAL 3
-*/
+
 
 #define BT_STARTED 0
 #define BT_STOPPED 1
@@ -49,9 +49,9 @@ typedef struct _announce_url_t {
 
 // 由tracker返回的响应中peers键的内容
 typedef struct _peerdata {
-    char id[21]; // 20用于null终止符
+    char id[21]; // id[20]用于null终止符
     int port;
-    char *ip; // Null终止
+    char *ip; // 15 + 1 byte
 } peerdata;
 
 // 包含在tracker响应中的数据
@@ -105,5 +105,8 @@ tracker_data *g_tracker_response;
 int g_uploaded;
 int g_downloaded;
 int g_left;
+int g_isseed;
+
+peer_t g_peers[MAXPEERS];
 
 #endif

@@ -83,15 +83,18 @@ torrentmetadata_t *parsetorrentfile(char *filename) {
                 if (!strncmp(idict[j].key, "length", strlen("length"))) {
                     ret->length = idict[j].val->val.i;
                     filled++;
+                    printf("LENGTH: %d\n", ret->length);
                 }
                 if (!strncmp(idict[j].key, "name", strlen("name"))) {
                     ret->name = (char *) malloc(strlen(idict[j].val->val.s) * sizeof(char));
                     memcpy(ret->name, idict[j].val->val.s, strlen(idict[j].val->val.s));
                     filled++;
+                    printf("NAME: %s\n", ret->name);
                 }
                 if (!strncmp(idict[j].key, "piece length", strlen("piece length"))) {
                     ret->piece_len = idict[j].val->val.i;
                     filled++;
+                    printf("PIECE LENGTH: %d\n", ret->piece_len);
                 }
                 if (!strncmp(idict[j].key, "pieces", strlen("pieces"))) {
                     int num_pieces = ret->length / ret->piece_len;
@@ -101,6 +104,7 @@ torrentmetadata_t *parsetorrentfile(char *filename) {
                     memcpy(ret->pieces, idict[j].val->val.s, num_pieces * 20);
                     ret->num_pieces = num_pieces;
                     filled++;
+                    printf("NUM PIECES: %d\n", ret->num_pieces);
                 }
             } // for循环结束
         } // info键处理结束
