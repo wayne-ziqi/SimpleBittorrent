@@ -38,7 +38,12 @@ void init(int argc, char **argv) {
     for (int i = 0; i < 5; i++) {
         val[i] = rand();
     }
-    memcpy(g_my_id, (char *) val, 20);
+    memcpy(g_my_id, (uint8_t *) val, 20);
+    printf("My id is: ");
+    for (int i = 0; i < PEER_ID_LEN; ++i) {
+        printf("%02x", g_my_id[i]);
+    }
+    printf("\n");
     strncpy(g_my_ip, argv[2], strlen(argv[2]));
     g_my_ip[strlen(argv[2]) + 1] = '\0';
     g_filename = argv[3];
@@ -117,6 +122,10 @@ int main(int argc, char **argv) {
     pthread_t listen_thread;
     pthread_create(&listen_thread, NULL, listen_for_peers, NULL);
 
+    // 设置连接peer的线程
+    pthread_t connect_thread;
+    pthread_create(&connect_thread, NULL, connect_to_peers, NULL);
+
     // 定期联系Tracker服务器
     int firsttime = 1;
     int mlen;
@@ -178,9 +187,6 @@ int main(int argc, char **argv) {
 //            printf("\n");
             printf("Peer ip: %s\n", g_tracker_response->peers[i].ip);
             printf("Peer port: %d\n", g_tracker_response->peers[i].port);
-            if (is_seed()) {
-
-            }
         }
 
         // 必须等待td->interval秒, 然后再发出下一个GET请求

@@ -9,6 +9,7 @@
 
 #define HANDSHAKE_LEN 68  // peer握手消息的长度, 以字节为单位
 #define BT_PROTOCOL_STR "BitTorrent protocol"
+#define BT_RESERVED_STR "\0\0\0\0\0\0\0\0"
 #define INFOHASH_LEN 20
 #define PEER_ID_LEN 20
 #define MAXPEERS 100
@@ -41,7 +42,9 @@ typedef struct pwp_msg_type{
 
 // 针对到一个peer的已建立连接, 维护相关数据
 typedef struct _peer_t {
-    char id[20];
+    char ip[16];
+    int port;
+    uint8_t id[20];
     long last_keep_alive;
     bitfield_t *bitfield;
     int sockfd;
@@ -64,14 +67,24 @@ void* listen_for_peers(void *arg);
 void* peer_recv_handler(void *arg);
 
 /**
+ * connect to peers
+ */
+void *connect_to_peers(void *arg);
+
+/**
  * check if peer_id is in g_peers
  */
 int get_peer_idx(uint8_t *peer_id);
 
 /**
+ * check if ip is in g_peers
+ */
+int get_peer_idx_by_ip(char *ip);
+
+/**
  * add peer_id to g_peers
  */
-int add_peer(uint8_t *peer_id, int socket);
+int add_peer(uint8_t *peer_id, char*ip, int port,  int socket);
 
 /**
  * remove peer_id from g_peers

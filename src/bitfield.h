@@ -6,6 +6,7 @@
 #define SIMPLETORRENT_BITFIELD_H
 
 #include <stdlib.h>
+#include <stdint.h>
 
 #define BITFIELD_SIZE(size) ((size + 7) / 8)
 
@@ -43,6 +44,11 @@ void bitfield_clear(bitfield_t *bitfield, int index);
  * check if the bitfield is full
  */
 int bitfield_full(bitfield_t *bitfield);
+
+/**
+ * check if the bitfield is all set according to another bitfield (src)
+ */
+int bitfield_all_set(bitfield_t *dst, bitfield_t *src);
 
 /**
  * check if the bitfield is empty

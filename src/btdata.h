@@ -73,7 +73,7 @@ typedef struct _tracker_request {
 char g_my_ip[128]; // 格式为XXX.XXX.XXX.XXX, null终止
 int g_peerport; // peer监听的端口号
 int g_infohash[5]; // 要共享或要下载的文件的SHA1哈希值, 每个客户端同时只能处理一个文件
-char g_my_id[20];
+uint8_t g_my_id[20];
 
 // 位域, 用于标记哪些分片已经下载
 bitfield_t *g_bitfield;

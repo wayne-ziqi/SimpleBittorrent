@@ -44,8 +44,7 @@ void bitfield_clear(bitfield_t *bitfield, int index){
 }
 
 int bitfield_full(bitfield_t *bitfield){
-    int i;
-    for (i = 0; i < bitfield->size; i++){
+    for (int i = 0; i < bitfield->size; i++){
         if (bitfield_get(bitfield, i) == 0){
             return 0;
         }
@@ -53,9 +52,18 @@ int bitfield_full(bitfield_t *bitfield){
     return 1;
 }
 
+int bitfield_all_set(bitfield_t *dst, bitfield_t *src){
+    assert(dst->size == src->size);
+    for (int i = 0; i < src->size; i++){
+        if (bitfield_get(src, i) == 1 && bitfield_get(dst, i) == 0){
+            return 0;
+        }
+    }
+    return 1;
+}
+
 int bitfield_empty(bitfield_t *bitfield){
-    int i;
-    for (i = 0; i < bitfield->size; i++){
+    for (int i = 0; i < bitfield->size; i++){
         if (bitfield_get(bitfield, i) == 1){
             return 0;
         }
@@ -64,9 +72,8 @@ int bitfield_empty(bitfield_t *bitfield){
 }
 
 int bitfield_count(bitfield_t *bitfield){
-    int i;
     int count = 0;
-    for (i = 0; i < bitfield->size; i++){
+    for (int i = 0; i < bitfield->size; i++){
         if (bitfield_get(bitfield, i) == 1){
             count++;
         }
@@ -80,11 +87,10 @@ void bitfield_destroy(bitfield_t *bitfield){
 }
 
 int bitfield_compare(bitfield_t *bitfield1, bitfield_t *bitfield2){
-    int i;
     if(bitfield1->size != bitfield2->size){
         return 0;
     }
-    for (i = 0; i < bitfield1->size; i++){
+    for (int i = 0; i < bitfield1->size; i++){
         if (bitfield_get(bitfield1, i) != bitfield_get(bitfield2, i)){
             return 0;
         }

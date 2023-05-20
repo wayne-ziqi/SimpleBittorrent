@@ -102,7 +102,8 @@ void *listen_for_peers(void *arg) {
             }
             // peer_idx officially connected
             LOCK_PEERS;
-            *peer_idx = add_peer(shake_pkt->peer_id, connfd);
+            *peer_idx = add_peer(shake_pkt->peer_id, inet_ntoa(clientaddr.sin_addr),
+                                 ntohs(clientaddr.sin_port), connfd);
             UNLOCK_PEERS;
             if (*peer_idx == -1) {
                 printf("<listen_for_peers> Error: max peer num exceeded\n");
@@ -142,6 +143,11 @@ void *peer_recv_handler(void *arg) {
         int msg_len = recv_pwpmsg(peer->sockfd, msg);
         if (msg_len == -1) {
             printf("<peer_recv_handler> Error: recv_pwpmsg failed\n");
+            LOCK_PEERS;
+            remove_peer(peer_idx);
+            UNLOCK_PEERS;
+            free_msg(msg);
+            break;
         } else if (msg_len == 0) {
             // peer keep alive
             long now = now_seconds();
@@ -173,7 +179,22 @@ void *peer_recv_handler(void *arg) {
                         printf("%02x", peer->id[i]);
                     }
                     printf(" interested\n");
-                    peer->peer_interested = 1;
+                    // send unchoke
+                    pwp_msg *unchoke_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
+                    unchoke_msg->id = UNCHOKE;
+                    unchoke_msg->len = 1;
+                    int len = send_pwpmsg(peer->sockfd, unchoke_msg);
+                    if (len == -1) {
+                        printf("<peer_recv_handler> Error: send unchoke failed\n");
+                        LOCK_PEERS;
+                        remove_peer(peer_idx);
+                        UNLOCK_PEERS;
+                        free_msg(msg);
+                        free_msg(unchoke_msg);
+                    } else {
+                        printf("<peer_recv_handler> unchoke sent\n");
+                        peer->peer_interested = 1;
+                    }
                     break;
                 }
                 case NOT_INTERESTED: {
@@ -207,6 +228,18 @@ void *peer_recv_handler(void *arg) {
                             free_msg(interested_msg);
                         }
                     }
+                    // check whether I have all pieces and send not interested
+                    if (bitfield_all_set(g_bitfield, peer->bitfield)) {
+                        if (peer->am_interested) {
+                            peer->am_interested = 0;
+                            pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
+                            not_interested_msg->id = NOT_INTERESTED;
+                            not_interested_msg->len = htonl(1);
+                            not_interested_msg->payload = NULL;
+                            send_pwpmsg(peer->sockfd, not_interested_msg);
+                            free_msg(not_interested_msg);
+                        }
+                    }
                     break;
                 }
                 case BITFIELD: {
@@ -215,9 +248,9 @@ void *peer_recv_handler(void *arg) {
                         printf("%02x", peer->id[i]);
                     }
                     printf(" bitfield\n");
-                    if (msg->len != 1 + g_bitfield->size) {
+                    if (msg->len != 1 + BITFIELD_SIZE(g_bitfield->size)) {
                         printf("<peer_recv_handler> Error: bitfield byte length not match, got: %d, expected: %d\n",
-                               msg->len - 1, g_bitfield->size);
+                               msg->len - 1, BITFIELD_SIZE(g_bitfield->size));
                         remove_peer(peer_idx);
                         break;
                     }
@@ -230,6 +263,28 @@ void *peer_recv_handler(void *arg) {
                         }
                     }
                     bitfield_destroy(msg_bitfield);
+                    if (bitfield_all_set(g_bitfield, peer->bitfield)) {
+                        if (peer->am_interested) {
+                            peer->am_interested = 0;
+                            pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
+                            not_interested_msg->id = NOT_INTERESTED;
+                            not_interested_msg->len = htonl(1);
+                            not_interested_msg->payload = NULL;
+                            send_pwpmsg(peer->sockfd, not_interested_msg);
+                            free_msg(not_interested_msg);
+                        }
+                    } else {
+                        if (!peer->am_interested) {
+                            // send interested
+                            peer->am_interested = 1;
+                            pwp_msg *interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
+                            interested_msg->id = INTERESTED;
+                            interested_msg->len = htonl(1);
+                            interested_msg->payload = NULL;
+                            send_pwpmsg(peer->sockfd, interested_msg);
+                            free_msg(interested_msg);
+                        }
+                    }
                     break;
                 }
                 case REQUEST: {
@@ -285,8 +340,11 @@ void *peer_recv_handler(void *arg) {
                     if (block_len > 0 && bitfield_get(g_bitfield, piece_idx) == 0) {
                         write_block(g_file, piece_idx, block_offset, block_len, block);
                     }
-                    // TODO: determine when the piece is fully downloaded
-
+                    // TODO: determine when the piece is fully downloaded， maybe need a recorder
+                    if (block_offset == 0 && block_len == g_piece_len) {
+                        printf("piece %d fully downloaded\n", piece_idx);
+                        bitfield_set(g_bitfield, piece_idx);
+                    }
                     break;
                 }
                 case CANCEL: {
@@ -312,6 +370,71 @@ void *peer_recv_handler(void *arg) {
     return NULL;
 }
 
+void *connect_to_peers(void *arg) {
+    while (!g_done) {
+        if(g_tracker_response == NULL || g_tracker_response->numpeers == 0) {
+            sleep(1);
+            continue;
+        }
+        for (int i = 0; i < g_tracker_response->numpeers; ++i) {
+            if(strcmp(g_tracker_response->peers[i].ip, g_my_ip) == 0) {
+                continue;
+            }
+            int peer_idx = get_peer_idx_by_ip(g_tracker_response->peers[i].ip);
+            if (peer_idx != -1) {
+                continue;
+            }
+            int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+            if (sockfd < 0) {
+                perror("<connect_to_peer> Error: socket");
+                close(sockfd);
+                continue;
+            }
+            struct sockaddr_in peer_addr;
+            bzero(&peer_addr, sizeof(peer_addr));
+            peer_addr.sin_family = AF_INET;
+            peer_addr.sin_port = htons(g_tracker_response->peers[i].port);
+            if (inet_pton(AF_INET, g_tracker_response->peers[i].ip, &peer_addr.sin_addr) <= 0) {
+                perror("<connect_to_peer> Error: inet_pton");
+                close(sockfd);
+                continue;
+            }
+            if (connect(sockfd, (struct sockaddr *) &peer_addr, sizeof(peer_addr)) < 0) {
+                perror("<connect_to_peer> Error: connect");
+                close(sockfd);
+                continue;
+            }
+            printf("<connect_to_peer> Connected to peer %s:%d\n", g_tracker_response->peers[i].ip,
+                   g_tracker_response->peers[i].port);
+            LOCK_PEERS;
+            peer_idx = add_peer(NULL, g_tracker_response->peers[i].ip,
+                                g_tracker_response->peers[i].port, sockfd);
+            UNLOCK_PEERS;
+            if (peer_idx == -1) {
+                printf("<connect_to_peer> Error: add_peer, peer max num exceeded\n");
+                close(sockfd);
+                continue;
+            }
+            int reversed_info_hash[5];
+            for (int j = 0; j < 5; ++j)
+                reversed_info_hash[j] = reverse_byte_orderi(g_infohash[j]);
+            pwp_shaking_pkt *pkt = make_handshake_pkt((uint8_t *) reversed_info_hash, g_my_id);
+            if (send(sockfd, pkt, HANDSHAKE_LEN, 0) < 0) {
+                perror("<connect_to_peer> Error: send");
+                close(sockfd);
+                continue;
+            }
+            free(pkt);
+            printf("<connect_to_peer> Sent handshake to peer %s:%d\n", g_tracker_response->peers[i].ip,
+                   g_tracker_response->peers[i].port);
+
+        }
+        sleep(1);
+    }
+    return NULL;
+}
+
+
 /**============================================
  * Peer management
  * ============================================ */
@@ -327,12 +450,28 @@ int get_peer_idx(uint8_t *peer_id) {
     return -1;
 }
 
-int add_peer(uint8_t *peer_id, int socket) {
+int get_peer_idx_by_ip(char *ip) {
+    for (int i = 0; i < MAXPEERS; ++i) {
+        if (g_peers[i] != NULL) {
+            if (strcmp(g_peers[i]->ip, ip) == 0) {
+                return i;
+            }
+        }
+    }
+    return -1;
+}
+
+int add_peer(uint8_t *peer_id, char *ip, int port, int socket) {
     for (int i = 0; i < MAXPEERS; ++i) {
         if (g_peers[i] == NULL) {
             g_peers[i] = (peer_t *) malloc(sizeof(peer_t));
             g_peers[i]->sockfd = socket;
-            memcpy(g_peers[i]->id, peer_id, 20);
+            if (peer_id == NULL)
+                memset(g_peers[i]->id, 0, 20);
+            else
+                memcpy(g_peers[i]->id, peer_id, 20);
+            strcpy(g_peers[i]->ip, ip);
+            g_peers[i]->port = port;
             g_peers[i]->last_keep_alive = now_seconds();
             g_peers[i]->bitfield = bitfield_create(g_num_pieces);
             g_peers[i]->am_choking = 1;
@@ -379,7 +518,7 @@ pwp_shaking_pkt *make_handshake_pkt(uint8_t *info_hash, uint8_t *peer_id) {
     bzero(pkt, sizeof(pwp_shaking_pkt));
     pkt->pstrlen = 19;
     memcpy(pkt->pstr, BT_PROTOCOL_STR, 19);
-    memcpy(pkt->reserved, "\0\0\0\0\0\0\0\0", 8);
+    memcpy(pkt->reserved, BT_RESERVED_STR, 8);
     memcpy(pkt->info_hash, info_hash, 20);
     memcpy(pkt->peer_id, peer_id, 20);
     return pkt;
