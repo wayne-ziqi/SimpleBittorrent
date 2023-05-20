@@ -8,6 +8,8 @@ SOURCES=src/util.c \
 		src/sha1.c \
 		src/shutdown.c \
 		src/pwp.c \
+		src/bitfield.c	\
+		src/fileio.c \
 		src/make_tracker_request.c \
 		src/parse_announce_url.c \
 		src/parsetorrentfile.c \

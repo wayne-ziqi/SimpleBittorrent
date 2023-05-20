@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <assert.h>
+#include <time.h>
 
 #include "btdata.h"
 #include "bencode.h"
@@ -54,10 +55,18 @@ int reverse_byte_orderi(int i);
 int make_big_endian(int i);
 int make_host_orderi(int i);
 
+int equal_sha1(const uint8_t *a, const uint8_t *b);
+
 // ctrl-c信号的处理函数
 void client_shutdown(int sig);
 
 // 从announce url中提取主机和端口数据
 announce_url_t* parse_announce_url(char* announce);
+
+long now_seconds();
+
+unsigned long write_block(FILE* fp, int index, int begin, int length, char* block);
+
+unsigned long read_block(FILE * fp, int index, int begin, int length, char *block);
 
 #endif

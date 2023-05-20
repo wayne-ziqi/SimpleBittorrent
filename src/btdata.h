@@ -1,6 +1,9 @@
 
 #include <pthread.h>
+#include <stdio.h>
 #include "bencode.h"
+#include "bitfield.h"
+#include "pwp.h"
 
 #ifndef BTDATA_H
 #define BTDATA_H
@@ -9,14 +12,7 @@
  * 一些常量定义
 **************************************/
 
-#define HANDSHAKE_LEN 68  // peer握手消息的长度, 以字节为单位
-#define BT_PROTOCOL_STR "BitTorrent protocol"
-#define INFOHASH_LEN 20
-#define PEER_ID_LEN 20
-#define MAXPEERS 100
-#define KEEP_ALIVE_INTERVAL 3
-
-
+// 用于标识peer的状态
 #define BT_STARTED 0
 #define BT_STOPPED 1
 #define BT_COMPLETED 2
@@ -71,16 +67,6 @@ typedef struct _tracker_request {
     char ip[16]; // 自己的IP地址, 格式为XXX.XXX.XXX.XXX, 最后以'\0'结尾
 } tracker_request;
 
-// 针对到一个peer的已建立连接, 维护相关数据
-typedef struct _peer_t {
-    int sockfd;
-    int choking;        // 作为上传者, 阻塞远端peer
-    int interested;     // 远端peer对我们的分片有兴趣
-    int choked;         // 作为下载者, 我们被远端peer阻塞
-    int have_interest;  // 作为下载者, 对远端peer的分片有兴趣
-    char name[20];
-} peer_t;
-
 /**************************************
  * 全局变量 
 **************************************/
@@ -89,24 +75,36 @@ int g_peerport; // peer监听的端口号
 int g_infohash[5]; // 要共享或要下载的文件的SHA1哈希值, 每个客户端同时只能处理一个文件
 char g_my_id[20];
 
+// 位域, 用于标记哪些分片已经下载
+bitfield_t *g_bitfield;
+pthread_mutex_t g_bitfield_lock;
+#define LOCK_BITFIELD pthread_mutex_lock(&g_bitfield_lock)
+#define UNLOCK_BITFIELD pthread_mutex_unlock(&g_bitfield_lock)
+
+// 用于存储所有peer的数组, 以及对它的访问控制
+peer_t *g_peers[MAXPEERS];
+pthread_mutex_t g_peers_lock;
+#define LOCK_PEERS pthread_mutex_lock(&g_peers_lock)
+#define UNLOCK_PEERS pthread_mutex_unlock(&g_peers_lock)
+
+
 int g_done; // 表明程序是否应该终止
 
 torrentmetadata_t *g_torrentmeta;
-char *g_filedata;      // 文件的实际数据
-int g_filelen;
-int g_num_pieces;
-char *g_filename;
+FILE *g_file;   // 要下载的文件
+int g_filelen;  // 要下载的文件的长度
+int g_num_pieces;   // 分片数量
+int g_piece_len;    // 每个分片的字节数
+char *g_filename;   // 要下载的文件的文件名
 
 char g_tracker_ip[16]; // tracker的IP地址, 格式为XXX.XXX.XXX.XXX(null终止)
 int g_tracker_port;
 tracker_data *g_tracker_response;
 
 // 这些变量用在函数make_tracker_request中, 它们需要在客户端执行过程中不断更新.
-int g_uploaded;
-int g_downloaded;
-int g_left;
-int g_isseed;
-
-peer_t g_peers[MAXPEERS];
+int g_uploaded;    // 已经上传的字节数
+int g_downloaded;   // 已经下载的字节数
+int g_left; // 还需要下载的字节数
+#define is_seed() (g_left == 0)
 
 #endif

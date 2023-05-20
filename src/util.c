@@ -154,3 +154,14 @@ int reverse_byte_orderi(int i) {
     c4 = (i >> 24) & 0xFF;
     return ((int) c1 << 24) + ((int) c2 << 16) + ((int) c3 << 8) + c4;
 }
+
+int equal_sha1(const uint8_t *a, const uint8_t *b) {
+    return memcmp(a, b, 20) == 0;
+}
+
+
+long now_seconds() {
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    return ts.tv_sec;
+}
