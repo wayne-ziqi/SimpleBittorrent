@@ -9,6 +9,28 @@
  * Peer connection
  * ============================================ */
 
+int check_hand_shake(pwp_shaking_pkt *shake_pkt) {
+    if (shake_pkt->pstrlen != strlen(BT_PROTOCOL_STR) &&
+        strncmp(shake_pkt->pstr, BT_PROTOCOL_STR, strlen(BT_PROTOCOL_STR)) != 0) {
+        printf("<listen_for_peers> Error: pstr is not BitTorrent protocol\n");
+        return -1;
+    }
+    int reversed_info_hash[5];
+    for (int i = 0; i < 5; ++i)
+        reversed_info_hash[i] = reverse_byte_orderi(g_infohash[i]);
+    if (!equal_sha1(shake_pkt->info_hash, (uint8_t *) reversed_info_hash)) {
+        printf("<listen_for_peers> Error: info_hash is not equal\n needed: ");
+        for (int i = 0; i < INFOHASH_LEN; ++i)
+            printf("%02X", ((uint8_t *) g_torrentmeta->info_hash)[i]);
+        printf(", got: ");
+        for (int i = 0; i < INFOHASH_LEN; ++i)
+            printf("%02X", shake_pkt->info_hash[i]);
+        printf("\n");
+        return -1;
+    }
+    return 1;
+}
+
 void *listen_for_peers(void *arg) {
     int listenfd, connfd;
     struct sockaddr_in clientaddr;
@@ -28,63 +50,20 @@ void *listen_for_peers(void *arg) {
         }
         printf("<listen_for_peers> Incoming connection from %s:%d\n", inet_ntoa(clientaddr.sin_addr),
                ntohs(clientaddr.sin_port));
-
         if (!peer_ip_exist(inet_ntoa(clientaddr.sin_addr))) {
             printf("<listen_for_peers> Error: peer is not recorded in tracker's response\n");
             close(connfd);
             continue;
         }
-
         bzero(shake_pkt, sizeof(pwp_shaking_pkt));
-        ssize_t len = recv(connfd, &shake_pkt->pstrlen, 1, 0);
-        if (len != 1) {
-            printf("<listen_for_peers> Error: read pstrlen failed\n");
+        ssize_t len = recv(connfd, shake_pkt, sizeof(pwp_shaking_pkt), 0);
+        if (len != sizeof(pwp_shaking_pkt)) {
+            printf("<listen_for_peers> Error: read shaking packet failed\n");
             close(connfd);
             continue;
         }
-        len = recv(connfd, shake_pkt->pstr, shake_pkt->pstrlen, 0);
-        if (len != shake_pkt->pstrlen) {
-            printf("<listen_for_peers> Error: read pstr failed\n");
-            close(connfd);
-            continue;
-        }
-        if (strncmp(shake_pkt->pstr, BT_PROTOCOL_STR, strlen(BT_PROTOCOL_STR)) != 0) {
-            printf("<listen_for_peers> Error: pstr is not BitTorrent protocol\n");
-            close(connfd);
-            continue;
-        }
-        len = recv(connfd, shake_pkt->reserved, 8, 0);
-        if (len != 8) {
-            printf("<listen_for_peers> Error: read reserved failed\n");
-            close(connfd);
-            continue;
-        }
-        len = recv(connfd, shake_pkt->info_hash, INFOHASH_LEN, 0);
-        if (len != INFOHASH_LEN) {
-            printf("<listen_for_peers> Error: read info_hash failed, get: ");
-            for (int i = 0; i < len; ++i)
-                printf("%02X", shake_pkt->info_hash[i]);
-            printf("\n");
-            close(connfd);
-            continue;
-        }
-        int reversed_info_hash[5];
-        for (int i = 0; i < 5; ++i)
-            reversed_info_hash[i] = reverse_byte_orderi(g_infohash[i]);
-        if (!equal_sha1(shake_pkt->info_hash, (uint8_t *) reversed_info_hash)) {
-            printf("<listen_for_peers> Error: info_hash is not equal\n needed: ");
-            for (int i = 0; i < INFOHASH_LEN; ++i)
-                printf("%02X", ((uint8_t *) g_torrentmeta->info_hash)[i]);
-            printf(", got: ");
-            for (int i = 0; i < INFOHASH_LEN; ++i)
-                printf("%02X", shake_pkt->info_hash[i]);
-            printf("\n");
-            close(connfd);
-            continue;
-        }
-        len = recv(connfd, shake_pkt->peer_id, PEER_ID_LEN, 0);
-        if (len != PEER_ID_LEN) {
-            printf("<listen_for_peers> Error: read peer_id failed\n");
+        if (check_hand_shake(shake_pkt) < 0) {
+            printf("<listen_for_peers> Error: check handshake failed\n");
             close(connfd);
             continue;
         }
@@ -118,7 +97,7 @@ void *listen_for_peers(void *arg) {
             printf(" connected\n");
             // start a new thread to handle this peer_idx
             pthread_t peer_thread;
-            pthread_create(&peer_thread, NULL, peer_recv_handler, peer_idx);
+            pthread_create(&peer_thread, NULL, peer_handler, peer_idx);
         } else {
             printf("<listen_for_peers> Error: peer_idx already exist\n");
             LOCK_PEERS;
@@ -134,7 +113,7 @@ void *listen_for_peers(void *arg) {
     return NULL;
 }
 
-void *peer_recv_handler(void *arg) {
+void *peer_handler(void *arg) {
     int peer_idx = *((int *) arg);
     free(arg);
     peer_t *peer = g_peers[peer_idx];
@@ -142,7 +121,7 @@ void *peer_recv_handler(void *arg) {
         pwp_msg *msg = (pwp_msg *) malloc(sizeof(pwp_msg));
         int msg_len = recv_pwpmsg(peer->sockfd, msg);
         if (msg_len == -1) {
-            printf("<peer_recv_handler> Error: recv_pwpmsg failed\n");
+            printf("<peer_handler> Error: recv_pwpmsg failed\n");
             LOCK_PEERS;
             remove_peer(peer_idx);
             UNLOCK_PEERS;
@@ -156,7 +135,7 @@ void *peer_recv_handler(void *arg) {
             LOCK_PEERS;
             switch (msg->id) {
                 case CHOKE: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -165,7 +144,7 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case UNCHOKE: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -174,7 +153,7 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case INTERESTED: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -185,20 +164,20 @@ void *peer_recv_handler(void *arg) {
                     unchoke_msg->len = 1;
                     int len = send_pwpmsg(peer->sockfd, unchoke_msg);
                     if (len == -1) {
-                        printf("<peer_recv_handler> Error: send unchoke failed\n");
+                        printf("<peer_handler> Error: send unchoke failed\n");
                         LOCK_PEERS;
                         remove_peer(peer_idx);
                         UNLOCK_PEERS;
                         free_msg(msg);
                         free_msg(unchoke_msg);
                     } else {
-                        printf("<peer_recv_handler> unchoke sent\n");
+                        printf("<peer_handler> unchoke sent\n");
                         peer->peer_interested = 1;
                     }
                     break;
                 }
                 case NOT_INTERESTED: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -207,7 +186,7 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case HAVE: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -243,13 +222,13 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case BITFIELD: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
                     printf(" bitfield\n");
                     if (msg->len != 1 + BITFIELD_SIZE(g_bitfield->size)) {
-                        printf("<peer_recv_handler> Error: bitfield byte length not match, got: %d, expected: %d\n",
+                        printf("<peer_handler> Error: bitfield byte length not match, got: %d, expected: %d\n",
                                msg->len - 1, BITFIELD_SIZE(g_bitfield->size));
                         remove_peer(peer_idx);
                         break;
@@ -288,7 +267,7 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case REQUEST: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -302,7 +281,7 @@ void *peer_recv_handler(void *arg) {
                     printf(" request piece %d, offset %d, len %d\n", piece_idx, block_offset, block_len);
                     // send piece if we have it
                     if (bitfield_get(g_bitfield, piece_idx) == 0) {
-                        printf("<peer_recv_handler> Error: don't have piece %d\n", piece_idx);
+                        printf("<peer_handler> Error: don't have piece %d\n", piece_idx);
                         break;
                     }
                     if (block_len > 0) {
@@ -324,12 +303,12 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case PIECE: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
                     if (peer->am_interested == 0) {
-                        printf(" Error: peer not interested\n");
+                        printf(" Error: i'm not interested\n");
                         break;
                     }
                     assert(msg->len >= 9);
@@ -348,7 +327,7 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 case CANCEL: {
-                    printf("<peer_recv_handler> Peer ");
+                    printf("<peer_handler> Peer ");
                     for (int i = 0; i < PEER_ID_LEN; ++i) {
                         printf("%02x", peer->id[i]);
                     }
@@ -360,7 +339,7 @@ void *peer_recv_handler(void *arg) {
                     break;
                 }
                 default:
-                    printf("<peer_recv_handler> Error: unknown msg id\n");
+                    printf("<peer_handler> Error: unknown msg id\n");
                     break;
             } // switch(msg->id)
             UNLOCK_PEERS;
@@ -372,65 +351,120 @@ void *peer_recv_handler(void *arg) {
 
 void *connect_to_peers(void *arg) {
     while (!g_done) {
-        if(g_tracker_response == NULL || g_tracker_response->numpeers == 0) {
+        if (g_tracker_response == NULL || g_tracker_response->numpeers == 0) {
             sleep(1);
             continue;
         }
+        LOCK_TRACKER_RESPONSE;
         for (int i = 0; i < g_tracker_response->numpeers; ++i) {
-            if(strcmp(g_tracker_response->peers[i].ip, g_my_ip) == 0) {
+            if (strcmp(g_tracker_response->peers[i].ip, g_my_ip) == 0) {
                 continue;
             }
             int peer_idx = get_peer_idx_by_ip(g_tracker_response->peers[i].ip);
             if (peer_idx != -1) {
                 continue;
             }
-            int sockfd = socket(AF_INET, SOCK_STREAM, 0);
-            if (sockfd < 0) {
-                perror("<connect_to_peer> Error: socket");
-                close(sockfd);
-                continue;
-            }
-            struct sockaddr_in peer_addr;
-            bzero(&peer_addr, sizeof(peer_addr));
-            peer_addr.sin_family = AF_INET;
-            peer_addr.sin_port = htons(g_tracker_response->peers[i].port);
-            if (inet_pton(AF_INET, g_tracker_response->peers[i].ip, &peer_addr.sin_addr) <= 0) {
-                perror("<connect_to_peer> Error: inet_pton");
-                close(sockfd);
-                continue;
-            }
-            if (connect(sockfd, (struct sockaddr *) &peer_addr, sizeof(peer_addr)) < 0) {
-                perror("<connect_to_peer> Error: connect");
-                close(sockfd);
-                continue;
-            }
-            printf("<connect_to_peer> Connected to peer %s:%d\n", g_tracker_response->peers[i].ip,
-                   g_tracker_response->peers[i].port);
-            LOCK_PEERS;
-            peer_idx = add_peer(NULL, g_tracker_response->peers[i].ip,
-                                g_tracker_response->peers[i].port, sockfd);
-            UNLOCK_PEERS;
-            if (peer_idx == -1) {
-                printf("<connect_to_peer> Error: add_peer, peer max num exceeded\n");
-                close(sockfd);
-                continue;
-            }
-            int reversed_info_hash[5];
-            for (int j = 0; j < 5; ++j)
-                reversed_info_hash[j] = reverse_byte_orderi(g_infohash[j]);
-            pwp_shaking_pkt *pkt = make_handshake_pkt((uint8_t *) reversed_info_hash, g_my_id);
-            if (send(sockfd, pkt, HANDSHAKE_LEN, 0) < 0) {
-                perror("<connect_to_peer> Error: send");
-                close(sockfd);
-                continue;
-            }
-            free(pkt);
-            printf("<connect_to_peer> Sent handshake to peer %s:%d\n", g_tracker_response->peers[i].ip,
-                   g_tracker_response->peers[i].port);
-
+            struct handshake_arg_t {
+                int port;
+                char ip[16];
+            };
+            struct handshake_arg_t *handshake_arg = (struct handshake_arg_t *) malloc(sizeof(struct handshake_arg_t));
+            handshake_arg->port = g_tracker_response->peers[i].port;
+            strcpy(handshake_arg->ip, g_tracker_response->peers[i].ip);
+            pthread_t handshake_thread;
+            pthread_create(&handshake_thread, NULL, connect_to_handshake_handler, (void *) handshake_arg);
         }
+        UNLOCK_TRACKER_RESPONSE;
         sleep(1);
     }
+    return NULL;
+}
+
+void *connect_to_handshake_handler(void *arg) {
+#define connect_to_handshake_handler_FAIL_RETURN {close(sockfd); free(handshake_arg); return NULL;}
+    struct handshake_arg_t {
+        int port;
+        char ip[16];
+    };
+    struct handshake_arg_t *handshake_arg = (struct handshake_arg_t *) arg;
+    int peer_port = handshake_arg->port;
+    char *peer_ip = handshake_arg->ip;
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("<connect_to_peer> Error: socket");
+        connect_to_handshake_handler_FAIL_RETURN
+    }
+    struct sockaddr_in peer_addr;
+    bzero(&peer_addr, sizeof(peer_addr));
+    peer_addr.sin_family = AF_INET;
+    peer_addr.sin_port = htons(peer_port);
+    if (inet_pton(AF_INET, peer_ip, &peer_addr.sin_addr) <= 0) {
+        perror("<connect_to_peer> Error: inet_pton");
+        connect_to_handshake_handler_FAIL_RETURN;
+    }
+    if (connect(sockfd, (struct sockaddr *) &peer_addr, sizeof(peer_addr)) < 0) {
+        perror("<connect_to_peer> Error: connect");
+        connect_to_handshake_handler_FAIL_RETURN
+    }
+    int reversed_info_hash[5];
+    for (int j = 0; j < 5; ++j)
+        reversed_info_hash[j] = reverse_byte_orderi(g_infohash[j]);
+    pwp_shaking_pkt *pkt = make_handshake_pkt((uint8_t *) reversed_info_hash, g_my_id);
+    if (send(sockfd, pkt, HANDSHAKE_LEN, 0) < 0) {
+        perror("<connect_to_peer> Error: send");
+        connect_to_handshake_handler_FAIL_RETURN
+    }
+    free(pkt);
+    printf("<connect_to_peer> Sent handshake to peer %s:%d\n", peer_ip, peer_port);
+    // recv handshake and fill peer id into peer_idx
+    pwp_shaking_pkt handshake;
+    if (recv(sockfd, &handshake, HANDSHAKE_LEN, 0) < 0) {
+        perror("<connect_to_peer> Error: recv");
+        connect_to_handshake_handler_FAIL_RETURN
+    }
+    if (check_hand_shake(&handshake) < 0) {
+        printf("<connect_to_peer> handshake check failed\n");
+        connect_to_handshake_handler_FAIL_RETURN
+    }
+    LOCK_PEERS;
+    int peer_idx = get_peer_idx(handshake.peer_id);
+    UNLOCK_PEERS;
+    if (peer_idx != -1) {
+        printf("<connect_to_peer> redundant connection from peer %s:%d\n", peer_ip, peer_port);
+        connect_to_handshake_handler_FAIL_RETURN
+    } else {
+        printf("<connect_to_peer> Connected to peer ");
+        for (int j = 0; j < PEER_ID_LEN; ++j) {
+            printf("%02x", handshake.peer_id[j]);
+        }
+        printf("\n");
+        LOCK_PEERS;
+        peer_idx = add_peer(handshake.peer_id, peer_ip, peer_port, sockfd);
+        UNLOCK_PEERS;
+        if (peer_idx == -1) {
+            printf("<connect_to_peer> Error: add_peer, peer max num exceeded\n");
+            connect_to_handshake_handler_FAIL_RETURN
+        }
+
+        // start peer thread to handle coming messages
+        int *peer_idx_ptr = (int *) malloc(sizeof(int));
+        *peer_idx_ptr = peer_idx;
+        pthread_t peer_thread;
+        pthread_create(&peer_thread, NULL, peer_handler, peer_idx_ptr);
+
+        // send bitfield
+        pwp_msg *bitfield_pkt = (pwp_msg *) malloc(sizeof(pwp_msg));
+        bitfield_pkt->len = htonl(1 + BITFIELD_SIZE(g_bitfield->size));
+        bitfield_pkt->id = BITFIELD;
+        bitfield_pkt->payload = (uint8_t *) malloc(BITFIELD_SIZE(g_bitfield->size));
+        memcpy(bitfield_pkt->payload, g_bitfield->bitfield, BITFIELD_SIZE(g_bitfield->size));
+        if (send(sockfd, bitfield_pkt, 1 + BITFIELD_SIZE(g_bitfield->size), 0) < 0) {
+            perror("<connect_to_peer> Error: send");
+            connect_to_handshake_handler_FAIL_RETURN
+        }
+        free_msg(bitfield_pkt);
+    }
+    free(handshake_arg);
     return NULL;
 }
 
@@ -466,10 +500,8 @@ int add_peer(uint8_t *peer_id, char *ip, int port, int socket) {
         if (g_peers[i] == NULL) {
             g_peers[i] = (peer_t *) malloc(sizeof(peer_t));
             g_peers[i]->sockfd = socket;
-            if (peer_id == NULL)
-                memset(g_peers[i]->id, 0, 20);
-            else
-                memcpy(g_peers[i]->id, peer_id, 20);
+            assert(peer_id != NULL);
+            memcpy(g_peers[i]->id, peer_id, PEER_ID_LEN);
             strcpy(g_peers[i]->ip, ip);
             g_peers[i]->port = port;
             g_peers[i]->last_keep_alive = now_seconds();
@@ -501,11 +533,13 @@ int peer_ip_exist(char *ip) {
         printf("<peer_ip_exist> Error: g_tracker_response is NULL\n");
         return 0;
     }
+    LOCK_TRACKER_RESPONSE;
     for (int i = 0; i < g_tracker_response->numpeers; ++i) {
         if (strcmp(g_tracker_response->peers[i].ip, ip) == 0) {
             return 1;
         }
     }
+    UNLOCK_TRACKER_RESPONSE;
     return 0;
 }
 

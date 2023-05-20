@@ -56,6 +56,11 @@ typedef struct _peer_t {
 } peer_t;
 
 /**
+ * check handshake basic info (length, protocol, reserved, info_hash)
+ */
+int check_hand_shake(pwp_shaking_pkt * shake_pkt);
+
+/**
  * some peers want to download from me, so I need to listen to them, this thread
  * upload downloaded pieces to interested peers
  */
@@ -64,12 +69,18 @@ void* listen_for_peers(void *arg);
 /**
  * handle connection after handshake
  */
-void* peer_recv_handler(void *arg);
+void* peer_handler(void *arg);
 
 /**
  * connect to peers
  */
 void *connect_to_peers(void *arg);
+
+/**
+ * connect to peers and send the first hanshake message
+ * receive handshake message from peer and send bitfield message
+ */
+void *connect_to_handshake_handler(void *arg);
 
 /**
  * check if peer_id is in g_peers

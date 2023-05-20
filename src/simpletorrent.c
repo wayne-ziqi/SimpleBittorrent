@@ -33,6 +33,7 @@ void init(int argc, char **argv) {
     }
     g_done = 0;
     g_tracker_response = NULL;
+    pthread_mutex_init(&g_tracker_response_lock, NULL);
     srand(time(NULL));
     int val[5];
     for (int i = 0; i < 5; i++) {
@@ -157,6 +158,11 @@ int main(int argc, char **argv) {
         memset(rcvline, 0x0, MAXLINE);
         memset(tmp, 0x0, MAXLINE);
 
+        LOCK_TRACKER_RESPONSE;
+        if (g_tracker_response != NULL)
+            free(g_tracker_response);
+        g_tracker_response = NULL;
+        UNLOCK_TRACKER_RESPONSE;
         // 读取并处理来自Tracker的响应
         tracker_response *tr;
         tr = preprocess_tracker_response(sockfd);
@@ -171,7 +177,9 @@ int main(int argc, char **argv) {
         memcpy(tmp2, tr->data, tr->size * sizeof(char));
 
         printf("Parsing tracker data\n");
+        LOCK_TRACKER_RESPONSE;
         g_tracker_response = get_tracker_data(tmp2, tr->size);
+        UNLOCK_TRACKER_RESPONSE;
 
         if (tmp2) {
             free(tmp2);

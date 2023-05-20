@@ -100,6 +100,9 @@ char *g_filename;   // 要下载的文件的文件名
 char g_tracker_ip[16]; // tracker的IP地址, 格式为XXX.XXX.XXX.XXX(null终止)
 int g_tracker_port;
 tracker_data *g_tracker_response;
+pthread_mutex_t g_tracker_response_lock;
+#define LOCK_TRACKER_RESPONSE pthread_mutex_lock(&g_tracker_response_lock)
+#define UNLOCK_TRACKER_RESPONSE pthread_mutex_unlock(&g_tracker_response_lock)
 
 // 这些变量用在函数make_tracker_request中, 它们需要在客户端执行过程中不断更新.
 int g_uploaded;    // 已经上传的字节数
