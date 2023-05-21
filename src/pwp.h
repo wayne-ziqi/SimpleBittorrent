@@ -26,6 +26,13 @@
 #define PIECE 7
 #define CANCEL 8
 
+/*
+#define print_peer_id(peer_id) \
+    for (int peer_id_i = 0; peer_id_i < PEER_ID_LEN; ++peer_id_i) { \
+        printf("%02x", peer_id[peer_id_i]); \
+    }
+*/
+
 typedef struct pwp_shaking{
     uint8_t pstrlen; // string length of <pstr>, as a single raw byte
     char pstr[19]; // string identifier of the protocol
@@ -35,7 +42,7 @@ typedef struct pwp_shaking{
 }pwp_shaking_pkt;
 
 typedef struct pwp_msg_type{
-    uint32_t len; // length of <payload>, in bytes (big endian)
+    int len; // length of <payload>, in bytes (big endian)
     uint8_t id; // id of message, as a single raw byte
     uint8_t *payload; // payload of message. Generally, this is either a string or a number of integers.
 }pwp_msg;
@@ -44,7 +51,7 @@ typedef struct pwp_msg_type{
 typedef struct _peer_t {
     char ip[16];
     int port;
-    uint8_t id[20];
+//    uint8_t id[20];
     long last_keep_alive;
     bitfield_t *bitfield;
     int sockfd;
@@ -83,9 +90,14 @@ void *connect_to_peers(void *arg);
 void *connect_to_handshake_handler(void *arg);
 
 /**
+ * download pieces from peers
+ */
+void *download_handler(void *arg);
+
+/**
  * check if peer_id is in g_peers
  */
-int get_peer_idx(uint8_t *peer_id);
+//int get_peer_idx(uint8_t *peer_id);
 
 /**
  * check if ip is in g_peers
@@ -93,9 +105,14 @@ int get_peer_idx(uint8_t *peer_id);
 int get_peer_idx_by_ip(char *ip);
 
 /**
+ * get peers index that have the piece
+ */
+int *get_avail_seed_peers(int piece_idx, int *num_peers);
+
+/**
  * add peer_id to g_peers
  */
-int add_peer(uint8_t *peer_id, char*ip, int port,  int socket);
+int add_peer(char*ip, int port,  int socket);
 
 /**
  * remove peer_id from g_peers

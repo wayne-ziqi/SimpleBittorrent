@@ -4,6 +4,7 @@
 #include "bencode.h"
 #include "bitfield.h"
 #include "pwp.h"
+#include "piece.h"
 
 #ifndef BTDATA_H
 #define BTDATA_H
@@ -80,6 +81,10 @@ bitfield_t *g_bitfield;
 pthread_mutex_t g_bitfield_lock;
 #define LOCK_BITFIELD pthread_mutex_lock(&g_bitfield_lock)
 #define UNLOCK_BITFIELD pthread_mutex_unlock(&g_bitfield_lock)
+piece_t **g_pieces;  // 用于存储所有分片的数组, 以及对它的访问控制
+pthread_mutex_t g_pieces_lock;
+#define LOCK_PIECES pthread_mutex_lock(&g_pieces_lock)
+#define UNLOCK_PIECES pthread_mutex_unlock(&g_pieces_lock)
 
 // 用于存储所有peer的数组, 以及对它的访问控制
 peer_t *g_peers[MAXPEERS];

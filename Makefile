@@ -10,6 +10,7 @@ SOURCES=src/util.c \
 		src/pwp.c \
 		src/bitfield.c	\
 		src/fileio.c \
+		src/piece.c	\
 		src/make_tracker_request.c \
 		src/parse_announce_url.c \
 		src/parsetorrentfile.c \

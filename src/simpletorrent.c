@@ -31,6 +31,7 @@ void init(int argc, char **argv) {
         printf("\t i will judge from the file's existence in the target location and determine if you are seed or not\n");
         exit(-1);
     }
+    // initialize torrent client basic info
     g_done = 0;
     g_tracker_response = NULL;
     pthread_mutex_init(&g_tracker_response_lock, NULL);
@@ -47,13 +48,16 @@ void init(int argc, char **argv) {
     printf("\n");
     strncpy(g_my_ip, argv[2], strlen(argv[2]));
     g_my_ip[strlen(argv[2]) + 1] = '\0';
+    g_peerport = 2706;
     g_filename = argv[3];
+
+    // initialize torrent meta info
     g_torrentmeta = parsetorrentfile(argv[1]);
     memcpy(g_infohash, g_torrentmeta->info_hash, 20);
     g_filelen = g_torrentmeta->length;
     g_num_pieces = g_torrentmeta->num_pieces;
     g_piece_len = g_torrentmeta->piece_len;
-    g_peerport = 2706;
+
     if (access(argv[3], F_OK) != -1) {
         g_left = 0;
         g_file = fopen(argv[3], "r+");
@@ -71,6 +75,8 @@ void init(int argc, char **argv) {
         }
         printf("File does not exist, running as client.\n");
     }
+
+    // initialize bitfield and pieces
     g_bitfield = bitfield_create(g_num_pieces);
     pthread_mutex_init(&g_bitfield_lock, NULL);
     for (int i = 0; i < g_bitfield->size; ++i) {
@@ -80,11 +86,22 @@ void init(int argc, char **argv) {
             bitfield_clear(g_bitfield, i);
         }
     }
+    g_pieces = (piece_t **) malloc(sizeof(piece_t *) * g_num_pieces);
+    pthread_mutex_init(&g_pieces_lock, NULL);
+    for (int i = 0; i < g_num_pieces; ++i) {
+        if (i == g_num_pieces - 1)
+            g_pieces[i] = piece_create(i, g_filelen - (g_num_pieces - 1) * g_piece_len);
+        else
+            g_pieces[i] = piece_create(i, g_piece_len);
+    }
+
+    // initialize peers
     bzero(g_peers, sizeof(g_peers));
     pthread_mutex_init(&g_peers_lock, NULL);
     g_uploaded = 0;
     g_downloaded = 0;
 
+    // initialize tracker info
     announce_url_t *announce_info;
     announce_info = parse_announce_url(g_torrentmeta->announce);
     // 提取tracker url中的IP地址
@@ -126,6 +143,10 @@ int main(int argc, char **argv) {
     // 设置连接peer的线程
     pthread_t connect_thread;
     pthread_create(&connect_thread, NULL, connect_to_peers, NULL);
+
+    // 设置下载piece的线程
+    pthread_t download_thread;
+    pthread_create(&download_thread, NULL, download_handler, NULL);
 
     // 定期联系Tracker服务器
     int firsttime = 1;
@@ -203,7 +224,6 @@ int main(int argc, char **argv) {
 
     // 睡眠以等待其他线程关闭它们的套接字, 只有在用户按下ctrl-c时才会到达这里
     printf("Application shutting down...\n");
-    fclose(g_file);
     sleep(2);
     exit(0);
 }
