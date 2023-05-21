@@ -60,6 +60,7 @@ void init(int argc, char **argv) {
 
     if (access(argv[3], F_OK) != -1) {
         g_left = 0;
+        g_downloaded = g_filelen;
         g_file = fopen(argv[3], "r+");
         if (g_file == NULL) {
             printf("<init>: fopen error\n");
@@ -67,7 +68,8 @@ void init(int argc, char **argv) {
         }
         printf("File already exists, running as seed.\n");
     } else {
-        g_left = g_num_pieces;
+        g_left = g_filelen;
+        g_downloaded = 0;
         int err = create_empty_file(argv[3], g_filelen, &g_file);
         if (err < 0) {
             printf("<init>: create_empty_file error\n");
@@ -93,6 +95,12 @@ void init(int argc, char **argv) {
             g_pieces[i] = piece_create(i, g_filelen - (g_num_pieces - 1) * g_piece_len);
         else
             g_pieces[i] = piece_create(i, g_piece_len);
+    }
+    if (is_seed()) {
+        for (int i = 0; i < g_num_pieces; ++i) {
+            g_pieces[i]->state = PIECE_DOWNLOADED;
+            g_pieces[i]->num_blocks_downloaded = g_pieces[i]->num_blocks;
+        }
     }
 
     // initialize peers

@@ -7,11 +7,16 @@
 
 #define BLOCK_SIZE 16384 // 16KB
 
+#define PIECE_MISSING 0
+#define PIECE_DOWNLOADING 1
+#define PIECE_DOWNLOADED 2
+
 #include <stdint.h>
 
 typedef struct _piece {
     int index;
     int length;
+    int state;
     int num_blocks;
     int num_blocks_downloaded;
     int *block_lengths;

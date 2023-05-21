@@ -13,6 +13,7 @@ piece_t *piece_create(int index, int length) {
     piece_t *piece = malloc(sizeof(piece_t));
     piece->index = index;
     piece->length = length;
+    piece->state = PIECE_MISSING;
     piece->num_blocks = (length + BLOCK_SIZE - 1) / BLOCK_SIZE;
     piece->num_blocks_downloaded = 0;
     piece->block_lengths = malloc(sizeof(int) * piece->num_blocks);
@@ -64,9 +65,14 @@ int get_rarest_piece_index() {
             }
         }
         UNLOCK_PEERS;
+
         if (curCnt < minCnt) {
-            minCnt = curCnt;
-            minIndex = i;
+            LOCK_PIECES;
+            if (g_pieces[i]->state == PIECE_MISSING) {
+                minCnt = curCnt;
+                minIndex = i;
+            }
+            UNLOCK_PIECES;
         }
     }
     return minIndex;

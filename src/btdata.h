@@ -113,6 +113,11 @@ pthread_mutex_t g_tracker_response_lock;
 int g_uploaded;    // 已经上传的字节数
 int g_downloaded;   // 已经下载的字节数
 int g_left; // 还需要下载的字节数
+int g_event;    // 用于标识客户端的状态, 可以是BT_STARTED, BT_STOPPED或BT_COMPLETED
+pthread_mutex_t g_variable_lock;    // 用于对上面的变量进行访问控制
+#define LOCK_VARIABLE pthread_mutex_lock(&g_variable_lock)
+#define UNLOCK_VARIABLE pthread_mutex_unlock(&g_variable_lock)
+
 #define is_seed() (g_left == 0)
 
 #endif
