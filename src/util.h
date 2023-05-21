@@ -25,6 +25,7 @@ int is_bigendian();
 // 从一个已连接套接字接收数据的函数
 int recvline(int fd, char **line);
 int recvlinef(int fd, char *format, ...);
+ssize_t readn(int f, void *av, int n);
 
 // 连接到另一台主机, 返回sockfd
 int connect_to_host(char* ip, int port);

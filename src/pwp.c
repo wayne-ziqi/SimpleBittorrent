@@ -682,7 +682,7 @@ pwp_shaking_pkt *make_handshake_pkt(uint8_t *info_hash, uint8_t *peer_id) {
 }
 
 int recv_pwpmsg(int sockfd, pwp_msg *pkt) {
-    ssize_t len = recv(sockfd, &pkt->len, sizeof(pkt->len), MSG_NOSIGNAL);
+    ssize_t len = readn(sockfd, &pkt->len, sizeof(pkt->len));
     if (len != sizeof(pkt->len)) {
         printf("<recv_pwpmsg> Error: recv msg length failed, expected: %ld, got: %ld\n", sizeof(pkt->len), len);
         return -1;
@@ -692,7 +692,7 @@ int recv_pwpmsg(int sockfd, pwp_msg *pkt) {
         // keep alive
         return 0;
     }
-    len = recv(sockfd, &pkt->id, sizeof(pkt->id), MSG_NOSIGNAL);
+    len = readn(sockfd, &pkt->id, sizeof(pkt->id));
     if (len != sizeof(pkt->id)) {
         printf("<recv_pwpmsg> Error: recv msg id failed\n");
         return -1;
@@ -704,7 +704,7 @@ int recv_pwpmsg(int sockfd, pwp_msg *pkt) {
     }
     assert(sizeof(pkt->id) == 1);
     pkt->payload = (uint8_t *) malloc(pkt->len - sizeof(pkt->id));
-    len = recv(sockfd, pkt->payload, pkt->len - sizeof(pkt->id), MSG_NOSIGNAL);
+    len = readn(sockfd, pkt->payload, pkt->len - sizeof(pkt->id));
     if (len != pkt->len - sizeof(pkt->id)) {
         printf("<recv_pwpmsg> Error: recv msg payload failed, expected: %ld, got: %ld\n", pkt->len - sizeof(pkt->id),
                len);
