@@ -95,6 +95,11 @@ void *connect_to_handshake_handler(void *arg);
 void *download_handler(void *arg);
 
 /**
+ * report download and upload progress
+ */
+void *transmission_monitor(void *arg);
+
+/**
  * check if peer_id is in g_peers
  */
 //int get_peer_idx(uint8_t *peer_id);

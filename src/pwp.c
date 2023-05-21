@@ -318,13 +318,13 @@ void *peer_handler(void *arg) {
                     printf("<peer_handler> Peer %s:%d send piece\n", peer->ip, peer->port);
 //                    print_peer_id(peer->id)
 //                    printf(" piece\n");
-                    pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                    bzero(not_interested_msg, sizeof(pwp_msg));
-                    not_interested_msg->id = NOT_INTERESTED;
-                    not_interested_msg->len = 1;
-                    not_interested_msg->payload = NULL;
                     if (peer->am_interested == 0) {
                         printf(" Error: i'm not interested\n");
+                        pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
+                        bzero(not_interested_msg, sizeof(pwp_msg));
+                        not_interested_msg->id = NOT_INTERESTED;
+                        not_interested_msg->len = 1;
+                        not_interested_msg->payload = NULL;
                         send_pwpmsg(peer->sockfd, not_interested_msg);
                         free_msg(not_interested_msg);
                         break;
@@ -359,16 +359,6 @@ void *peer_handler(void *arg) {
                         g_left -= g_pieces[piece_idx]->length;
                         assert(g_left >= 0);
                         UNLOCK_VARIABLE;
-                        if (g_left == 0) {
-                            printf("<peer_handler> Download complete\n");
-                            peer->am_interested = 0;
-                            // send not interested to peer
-                            send_pwpmsg(peer->sockfd, not_interested_msg);
-                            printf("<peer_handler> not interested to peer %s:%d sent\n", peer->ip, peer->port);
-                            free_msg(not_interested_msg);
-                        } else {
-                            printf("<peer_handler> Downloaded %d bytes, left %d bytes\n", g_downloaded, g_left);
-                        }
                         break;
                     }
                     UNLOCK_PIECES;
@@ -573,6 +563,41 @@ void *download_handler(void *arg) {
             sleep(3);
         }
         usleep(10000);
+    }
+    return NULL;
+}
+
+void *transmission_monitor(void *arg) {
+    printf("<transmission_monitor> Transmission monitor started\n");
+    pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
+    bzero(not_interested_msg, sizeof(pwp_msg));
+    not_interested_msg->id = NOT_INTERESTED;
+    not_interested_msg->len = 1;
+    not_interested_msg->payload = NULL;
+    int first_time = 1;
+    while (!g_done) {
+        if (g_left == 0 && first_time) {
+            printf("<peer_handler> Download complete\n");
+            // send not interested to all other peers
+            LOCK_PEERS;
+            for (int i = 0; i < MAXPEERS; ++i) {
+                if (g_peers[i] != NULL) {
+                    if (send_pwpmsg(g_peers[i]->sockfd, not_interested_msg) < 0) {
+                        perror("<transmission_monitor> Error: send");
+                    } else {
+                        printf("<transmission_monitor> send not interested to peer %s:%d\n", g_peers[i]->ip,
+                               g_peers[i]->port);
+                    }
+                }
+            }
+            UNLOCK_PEERS;
+            free_msg(not_interested_msg);
+            first_time = 0;
+        } else {
+            printf("<peer_handler> Uploaded: %d bytes, Downloaded: %d bytes, Left: %d bytes\n",
+                   g_uploaded, g_downloaded, g_left);
+        }
+        sleep(1);
     }
     return NULL;
 }

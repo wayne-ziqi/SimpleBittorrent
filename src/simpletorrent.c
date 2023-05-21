@@ -143,8 +143,11 @@ int main(int argc, char **argv) {
     // 设置信号句柄
     signal(SIGINT, client_shutdown);
 
-    // 设置监听peer的线程
+    // 设置监视器线程
+    pthread_t monitor_thread;
+    pthread_create(&monitor_thread, NULL, transmission_monitor, NULL);
 
+    // 设置监听peer的线程
     pthread_t listen_thread;
     pthread_create(&listen_thread, NULL, listen_for_peers, NULL);
 
@@ -155,6 +158,8 @@ int main(int argc, char **argv) {
     // 设置下载piece的线程
     pthread_t download_thread;
     pthread_create(&download_thread, NULL, download_handler, NULL);
+
+
 
     // 定期联系Tracker服务器
     int firsttime = 1;
