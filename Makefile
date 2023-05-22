@@ -8,6 +8,7 @@ SOURCES=src/util.c \
 		src/sha1.c \
 		src/shutdown.c \
 		src/pwp.c \
+		src/pwpmsg.c	\
 		src/bitfield.c	\
 		src/fileio.c \
 		src/piece.c	\

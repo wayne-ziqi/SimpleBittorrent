@@ -21,6 +21,11 @@ typedef struct _bitfield {
 bitfield_t *bitfield_create(int size);
 
 /**
+ * copy a bitfield
+ */
+bitfield_t *bitfield_copy(bitfield_t *bitfield);
+
+/**
  * create a bitfield with given bit length and str
  */
 bitfield_t *bitfield_create_from_string(uint8_t *str, int size);
@@ -34,6 +39,11 @@ int bitfield_get(bitfield_t *bitfield, int index);
  * set the bit at given index
  */
 void bitfield_set(bitfield_t *bitfield, int index);
+
+/**
+ * set the bitfield according to another bitfield (src)
+ */
+void bitfield_set_from(bitfield_t *dst, bitfield_t *src);
 
 /**
  * clear the bit at given index
@@ -51,6 +61,21 @@ int bitfield_full(bitfield_t *bitfield);
 int bitfield_all_set(bitfield_t *dst, bitfield_t *src);
 
 /**
+ * check if the bitfield have all the bits from another bitfield (src)
+ */
+int bitfield_have_all_from(bitfield_t *dst, bitfield_t *src);
+
+/**
+ * get all set bit index
+ */
+int *bitfield_get_set_indexes(bitfield_t *bitfield, int *size);
+
+/**
+ * do bitfield xor and store the result in dst
+ */
+void bitfield_xor(bitfield_t *dst, bitfield_t *src);
+
+/**
  * check if the bitfield is empty
  */
 int bitfield_empty(bitfield_t *bitfield);
@@ -63,7 +88,7 @@ int bitfield_count(bitfield_t *bitfield);
 /**
  * destroy the bitfield
  */
-void bitfield_destroy(bitfield_t *bitfield);
+void bitfield_free(bitfield_t *bitfield);
 
 /**
  * compare two bitfields

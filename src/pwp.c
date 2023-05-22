@@ -101,16 +101,11 @@ void *listen_for_peers(void *arg) {
             pthread_create(&peer_thread, NULL, peer_handler, peer_idx);
 
             // send bitfield
-            pwp_msg *bitfield_pkt = (pwp_msg *) malloc(sizeof(pwp_msg));
-            bzero(bitfield_pkt, sizeof(pwp_msg));
-            bitfield_pkt->len = 1 + BITFIELD_SIZE(g_bitfield->size);
-            bitfield_pkt->id = BITFIELD;
-            bitfield_pkt->payload = (uint8_t *) malloc(BITFIELD_SIZE(g_bitfield->size));
-            memcpy(bitfield_pkt->payload, g_bitfield->bitfield, BITFIELD_SIZE(g_bitfield->size));
-            if (send_pwpmsg(connfd, bitfield_pkt) < 0) {
+            pwp_msg *bitfield_msg = make_bitfield_msg(g_bitfield);
+            if (send_pwpmsg(connfd, bitfield_msg) < 0) {
                 perror("<connect_to_peer> Error: send");
             }
-            free_msg(bitfield_pkt);
+            free_msg(bitfield_msg);
 
         } else {
             printf("<listen_for_peers> Error: peer_idx already exist\n");
@@ -169,10 +164,7 @@ void *peer_handler(void *arg) {
 //                    print_peer_id(peer->id)
 //                    printf(" interested\n");
                     // send unchoke
-                    pwp_msg *unchoke_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                    bzero(unchoke_msg, sizeof(pwp_msg));
-                    unchoke_msg->id = UNCHOKE;
-                    unchoke_msg->len = 1;
+                    pwp_msg *unchoke_msg = make_unchoke_msg();
                     int len = send_pwpmsg(peer->sockfd, unchoke_msg);
                     if (len == -1) {
                         printf("<peer_handler> Error: send unchoke failed\n");
@@ -204,11 +196,7 @@ void *peer_handler(void *arg) {
                         if (!peer->am_interested) {
                             // send interested
                             peer->am_interested = 1;
-                            pwp_msg *interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                            bzero(interested_msg, sizeof(pwp_msg));
-                            interested_msg->id = INTERESTED;
-                            interested_msg->len = 1;
-                            interested_msg->payload = NULL;
+                            pwp_msg *interested_msg = make_interested_msg();
                             send_pwpmsg(peer->sockfd, interested_msg);
                             free_msg(interested_msg);
                         }
@@ -217,11 +205,7 @@ void *peer_handler(void *arg) {
                     if (bitfield_all_set(g_bitfield, peer->bitfield)) {
                         if (peer->am_interested) {
                             peer->am_interested = 0;
-                            pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                            bzero(not_interested_msg, sizeof(pwp_msg));
-                            not_interested_msg->id = NOT_INTERESTED;
-                            not_interested_msg->len = 1;
-                            not_interested_msg->payload = NULL;
+                            pwp_msg *not_interested_msg = make_not_interested_msg();
                             send_pwpmsg(peer->sockfd, not_interested_msg);
                             free_msg(not_interested_msg);
                         }
@@ -246,15 +230,11 @@ void *peer_handler(void *arg) {
                             bitfield_clear(peer->bitfield, i);
                         }
                     }
-                    bitfield_destroy(msg_bitfield);
+                    bitfield_free(msg_bitfield);
                     if (bitfield_all_set(g_bitfield, peer->bitfield)) {
                         if (peer->am_interested) {
                             peer->am_interested = 0;
-                            pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                            bzero(not_interested_msg, sizeof(pwp_msg));
-                            not_interested_msg->id = NOT_INTERESTED;
-                            not_interested_msg->len = 1;
-                            not_interested_msg->payload = NULL;
+                            pwp_msg *not_interested_msg = make_not_interested_msg();
                             send_pwpmsg(peer->sockfd, not_interested_msg);
                             free_msg(not_interested_msg);
                             printf("<peer_handler> not interested to peer %s:%d sent\n", peer->ip, peer->port);
@@ -265,11 +245,7 @@ void *peer_handler(void *arg) {
                         if (!peer->am_interested) {
                             // send interested
                             peer->am_interested = 1;
-                            pwp_msg *interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                            bzero(interested_msg, sizeof(pwp_msg));
-                            interested_msg->id = INTERESTED;
-                            interested_msg->len = 1;
-                            interested_msg->payload = NULL;
+                            pwp_msg *interested_msg = make_interested_msg();
                             send_pwpmsg(peer->sockfd, interested_msg);
                             free_msg(interested_msg);
                             printf("<peer_handler> interested to peer %s:%d sent\n", peer->ip, peer->port);
@@ -296,18 +272,9 @@ void *peer_handler(void *arg) {
                         break;
                     }
                     if (block_len > 0) {
-                        int reverse_idx = reverse_byte_orderi(piece_idx);
-                        int reverse_offset = reverse_byte_orderi(block_offset);
-                        char *block = (char *) malloc(block_len);
+                        uint8_t *block = (uint8_t *) malloc(block_len);
                         read_block(g_file, piece_idx, block_offset, block_len, block);
-                        pwp_msg *piece_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                        bzero(piece_msg, sizeof(pwp_msg));
-                        piece_msg->id = PIECE;
-                        piece_msg->len = 9 + block_len;
-                        piece_msg->payload = (uint8_t *) malloc(8 + block_len);
-                        memcpy(piece_msg->payload, &reverse_idx, 4);
-                        memcpy(piece_msg->payload + 4, &reverse_offset, 4);
-                        memcpy(piece_msg->payload + 8, block, block_len);
+                        pwp_msg *piece_msg = make_piece_msg(piece_idx, block_offset, block_len, block);
                         send_pwpmsg(peer->sockfd, piece_msg);
                         free_msg(piece_msg);
                         free(block);
@@ -320,18 +287,14 @@ void *peer_handler(void *arg) {
 //                    printf(" piece\n");
                     if (peer->am_interested == 0) {
                         printf(" Error: i'm not interested\n");
-                        pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-                        bzero(not_interested_msg, sizeof(pwp_msg));
-                        not_interested_msg->id = NOT_INTERESTED;
-                        not_interested_msg->len = 1;
-                        not_interested_msg->payload = NULL;
+                        pwp_msg *not_interested_msg = make_not_interested_msg();
                         send_pwpmsg(peer->sockfd, not_interested_msg);
                         free_msg(not_interested_msg);
                         break;
                     }
                     assert(msg->len >= 9);
                     int piece_idx, block_offset, block_len;
-                    char *block = NULL;
+                    uint8_t *block = NULL;
                     extract_piece_info(msg, &piece_idx, &block_offset, &block_len, &block);
                     printf("<peer_handler> piece msg, piece %d, offset %d, len %d\n", piece_idx, block_offset,
                            block_len);
@@ -494,9 +457,55 @@ void *connect_to_handshake_handler(void *arg) {
 
 void *download_handler(void *arg) {
     printf("<download_handler> Download handler started\n");
-
+    bitfield_t *oldField = bitfield_copy(g_bitfield);
     while (!g_done) {
-        int piece_idx = get_rarest_piece_index(), reversed_piece_idx = reverse_byte_orderi(piece_idx);
+        if (is_seed()) {
+            sleep(5);
+            continue;
+        }
+        // check if all pieces are downloaded
+        LOCK_PEERS;
+        for (int i = 0; i < MAXPEERS; ++i) {
+            if (g_peers[i] == NULL)continue;
+            if (g_peers[i]->am_interested && bitfield_have_all_from(g_bitfield, g_peers[i]->bitfield)) {
+                g_peers[i]->am_interested = 0;
+                // send not interested
+                pwp_msg *msg = make_not_interested_msg();
+                send_pwpmsg(g_peers[i]->sockfd, msg);
+                free(msg);
+            }
+        }
+        UNLOCK_PEERS;
+        // check if i have new pieces
+        bitfield_t *xorfield = bitfield_copy(g_bitfield);
+        bitfield_xor(xorfield, oldField);
+        if (!bitfield_empty(xorfield)) {
+            printf("<download_handler> New piece downloaded\n");
+            bitfield_free(oldField);
+            oldField = bitfield_copy(g_bitfield);
+            int piece_num;
+            int *piece_idxes = bitfield_get_set_indexes(xorfield, &piece_num);
+            bitfield_free(xorfield);
+            // send have msg to all peers
+            LOCK_PEERS;
+            for (int i = 0; i < MAXPEERS; ++i) {
+                if (g_peers[i] == NULL)continue;
+                if (!g_peers[i]->am_choking) {
+                    for (int j = 0; j < piece_num; ++j) {
+                        pwp_msg *msg = make_have_msg(piece_idxes[j]);
+                        send_pwpmsg(g_peers[i]->sockfd, msg);
+                        free(msg);
+                    }
+                }
+            }
+            UNLOCK_PEERS;
+            free(piece_idxes);
+        } else {
+            bitfield_free(xorfield);
+        }
+
+
+        int piece_idx = get_rarest_piece_index();
         if (piece_idx != -1) {
             LOCK_PIECES;
             piece_t *piece = g_pieces[piece_idx];
@@ -515,20 +524,11 @@ void *download_handler(void *arg) {
                 }
                 // send all block requests in this piece
                 int i;
-                pwp_msg *request_pkt = (pwp_msg *) malloc(sizeof(pwp_msg));
-                bzero(request_pkt, sizeof(pwp_msg));
-                request_pkt->len = 13;
-                request_pkt->id = REQUEST;
-                request_pkt->payload = (uint8_t *) malloc(12);
                 for (i = 0; i < piece->num_blocks; ++i) {
                     if (piece->block_lengths[i] == 0) {
-                        int block_offset = i * BLOCK_SIZE,
-                                reversed_block_offset = reverse_byte_orderi(block_offset);
-                        int block_length = get_expected_block_length(piece, i),
-                                reversed_block_length = reverse_byte_orderi(block_length);
-                        memcpy(request_pkt->payload, &reversed_piece_idx, 4);
-                        memcpy(request_pkt->payload + 4, &reversed_block_offset, 4);
-                        memcpy(request_pkt->payload + 8, &reversed_block_length, 4);
+                        int block_offset = i * BLOCK_SIZE;
+                        int block_length = get_expected_block_length(piece, i);
+                        pwp_msg *request_pkt = make_request_msg(piece_idx, block_offset, block_length);
                         int peer_to_send = i % seed_num;
                         LOCK_PEERS;
                         if (!g_peers[seed_peer[peer_to_send]] ||
@@ -540,6 +540,7 @@ void *download_handler(void *arg) {
                             sleep(1);
                             break;
                         }
+                        free_msg(request_pkt);
                         if (g_peers[seed_peer[peer_to_send]]) {
                             printf("<download_handler> request piece %d block %d from peer %s:%d\n", piece_idx, i,
                                    g_peers[seed_peer[peer_to_send]]->ip, g_peers[seed_peer[peer_to_send]]->port);
@@ -562,18 +563,14 @@ void *download_handler(void *arg) {
 //            printf("<download_handler> No rarest piece found\n");
             sleep(3);
         }
-        usleep(10000);
+        usleep(1000);
     }
     return NULL;
 }
 
 void *transmission_monitor(void *arg) {
     printf("<transmission_monitor> Transmission monitor started\n");
-    pwp_msg *not_interested_msg = (pwp_msg *) malloc(sizeof(pwp_msg));
-    bzero(not_interested_msg, sizeof(pwp_msg));
-    not_interested_msg->id = NOT_INTERESTED;
-    not_interested_msg->len = 1;
-    not_interested_msg->payload = NULL;
+    pwp_msg *not_interested_msg = make_not_interested_msg();
     int first_time = 1;
     while (!g_done) {
         if (g_left == 0 && first_time) {
@@ -655,7 +652,7 @@ void remove_peer(int peer_idx) {
     if (g_peers[peer_idx] != NULL) {
         if (g_peers[peer_idx]->sockfd > 0)
             close(g_peers[peer_idx]->sockfd);
-        bitfield_destroy(g_peers[peer_idx]->bitfield);
+        bitfield_free(g_peers[peer_idx]->bitfield);
         free(g_peers[peer_idx]);
         g_peers[peer_idx] = NULL;
     }
@@ -695,16 +692,7 @@ int *get_avail_seed_peers(int piece_idx, int *num_peers) {
  * Peer packet and message functions
  * ============================================ */
 
-pwp_shaking_pkt *make_handshake_pkt(uint8_t *info_hash, uint8_t *peer_id) {
-    pwp_shaking_pkt *pkt = (pwp_shaking_pkt *) malloc(sizeof(pwp_shaking_pkt));
-    bzero(pkt, sizeof(pwp_shaking_pkt));
-    pkt->pstrlen = 19;
-    memcpy(pkt->pstr, BT_PROTOCOL_STR, 19);
-    memcpy(pkt->reserved, BT_RESERVED_STR, 8);
-    memcpy(pkt->info_hash, info_hash, 20);
-    memcpy(pkt->peer_id, peer_id, 20);
-    return pkt;
-}
+
 
 int recv_pwpmsg(int sockfd, pwp_msg *pkt) {
     ssize_t len = readn(sockfd, &pkt->len, sizeof(pkt->len));
@@ -767,25 +755,4 @@ int send_pwpmsg(int sockfd, pwp_msg *pkt) {
         return -1;
     }
     return (int) pkt->len;
-}
-
-void free_msg(pwp_msg *pkt) {
-    if (pkt->payload != NULL)
-        free(pkt->payload);
-    free(pkt);
-}
-
-void extract_request_info(pwp_msg *pkt, int *index, int *begin, int *length) {
-    *index = pkt->payload[0] << 24 | pkt->payload[1] << 16 | pkt->payload[2] << 8 | pkt->payload[3];
-    *begin = pkt->payload[4] << 24 | pkt->payload[5] << 16 | pkt->payload[6] << 8 | pkt->payload[7];
-    *length = pkt->payload[8] << 24 | pkt->payload[9] << 16 | pkt->payload[10] << 8 | pkt->payload[11];
-}
-
-void extract_piece_info(pwp_msg *pkt, int *index, int *begin, int *length, char **block) {
-    *index = pkt->payload[0] << 24 | pkt->payload[1] << 16 | pkt->payload[2] << 8 | pkt->payload[3];
-    *begin = pkt->payload[4] << 24 | pkt->payload[5] << 16 | pkt->payload[6] << 8 | pkt->payload[7];
-    *length = (int) pkt->len - 9;
-    if (*length > 0)
-        *block = (char *) malloc(*length);
-    memcpy(*block, pkt->payload + 8, *length);
 }

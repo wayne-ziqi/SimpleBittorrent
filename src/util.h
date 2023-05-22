@@ -66,8 +66,8 @@ announce_url_t* parse_announce_url(char* announce);
 
 long now_seconds();
 
-unsigned long write_block(FILE* fp, int index, int begin, int length, char* block);
+unsigned long write_block(FILE* fp, int index, int begin, int length, uint8_t * block);
 
-unsigned long read_block(FILE * fp, int index, int begin, int length, char *block);
+unsigned long read_block(FILE * fp, int index, int begin, int length, uint8_t *block);
 
 #endif
