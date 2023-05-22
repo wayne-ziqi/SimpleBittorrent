@@ -93,9 +93,6 @@ void *listen_for_peers(void *arg) {
             }
             printf("<listen_for_peers> Peer %s:%d connected\n", inet_ntoa(clientaddr.sin_addr),
                    ntohs(clientaddr.sin_port));
-            // peer_idx id
-//            print_peer_id(shake_pkt->peer_id)
-//            printf(" connected\n");
             // start a new thread to handle this peer_idx
             pthread_t peer_thread;
             pthread_create(&peer_thread, NULL, peer_handler, peer_idx);
@@ -147,22 +144,16 @@ void *peer_handler(void *arg) {
             switch (msg->id) {
                 case CHOKE: {
                     printf("<peer_handler> Peer %s:%d choked me\n", peer->ip, peer->port);
-//                    print_peer_id(peer->id)
-//                    printf(" choked me\n");
                     peer->am_choking = 1;
                     break;
                 }
                 case UNCHOKE: {
                     printf("<peer_handler> Peer %s:%d unchoked me\n", peer->ip, peer->port);
-//                    print_peer_id(peer->id)
-//                    printf(" unchoke me\n");
                     peer->am_choking = 0;
                     break;
                 }
                 case INTERESTED: {
                     printf("<peer_handler> Peer %s:%d interested\n", peer->ip, peer->port);
-//                    print_peer_id(peer->id)
-//                    printf(" interested\n");
                     // send unchoke
                     pwp_msg *unchoke_msg = make_unchoke_msg();
                     int len = send_pwpmsg(peer->sockfd, unchoke_msg);
@@ -179,20 +170,17 @@ void *peer_handler(void *arg) {
                 }
                 case NOT_INTERESTED: {
                     printf("<peer_handler> Peer %s:%d not interested\n", peer->ip, peer->port);
-//                    print_peer_id(peer->id)
-//                    printf(" not interested\n");
                     peer->peer_interested = 0;
                     break;
                 }
                 case HAVE: {
                     assert(msg->len == 5);
                     printf("<peer_handler> Peer %s:%d", peer->ip, peer->port);
-//                    print_peer_id(peer->id)
                     int piece_idx = msg->payload[0];
                     printf(" have piece %d\n", piece_idx);
-                    bitfield_set(peer->bitfield, piece_idx);
                     if (!bitfield_get(g_bitfield, piece_idx)) {
                         // peer has a piece that I don't have
+                        bitfield_set(peer->bitfield, piece_idx);
                         if (!peer->am_interested) {
                             // send interested
                             peer->am_interested = 1;
@@ -273,7 +261,7 @@ void *peer_handler(void *arg) {
                     }
                     if (block_len > 0) {
                         uint8_t *block = (uint8_t *) malloc(block_len);
-                        read_block(g_file, piece_idx, block_offset, block_len, block);
+                        read_block(piece_idx, block_offset, block_len, block);
                         pwp_msg *piece_msg = make_piece_msg(piece_idx, block_offset, block_len, block);
                         send_pwpmsg(peer->sockfd, piece_msg);
                         free_msg(piece_msg);
@@ -299,7 +287,7 @@ void *peer_handler(void *arg) {
                     printf("<peer_handler> piece msg, piece %d, offset %d, len %d\n", piece_idx, block_offset,
                            block_len);
                     if (block_len > 0 && bitfield_get(g_bitfield, piece_idx) == 0) {
-                        write_block(g_file, piece_idx, block_offset, block_len, block);
+                        write_block(piece_idx, block_offset, block_len, block);
                     }
                     free(block);
                     // determine when the piece is fully downloaded， maybe need a recorder, remember to add mutex
@@ -376,7 +364,7 @@ void *connect_to_peers(void *arg) {
             pthread_create(&handshake_thread, NULL, connect_to_handshake_handler, (void *) handshake_arg);
         }
         UNLOCK_TRACKER_RESPONSE;
-        sleep(5);
+        sleep(1);
     }
     return NULL;
 }
@@ -459,10 +447,6 @@ void *download_handler(void *arg) {
     printf("<download_handler> Download handler started\n");
     bitfield_t *oldField = bitfield_copy(g_bitfield);
     while (!g_done) {
-        if (is_seed()) {
-            sleep(5);
-            continue;
-        }
         // check if all pieces are downloaded
         LOCK_PEERS;
         for (int i = 0; i < MAXPEERS; ++i) {
@@ -476,6 +460,18 @@ void *download_handler(void *arg) {
             }
         }
         UNLOCK_PEERS;
+
+        if (is_seed()) {
+            LOCK_VARIABLE;
+            if (g_file != NULL) {
+                fclose(g_file);
+                g_file = NULL;
+            }
+            UNLOCK_VARIABLE;
+            sleep(5);
+            continue;
+        }
+
         // check if i have new pieces
         bitfield_t *xorfield = bitfield_copy(g_bitfield);
         bitfield_xor(xorfield, oldField);
@@ -503,7 +499,6 @@ void *download_handler(void *arg) {
         } else {
             bitfield_free(xorfield);
         }
-
 
         int piece_idx = get_rarest_piece_index();
         if (piece_idx != -1) {
@@ -544,7 +539,6 @@ void *download_handler(void *arg) {
                         if (g_peers[seed_peer[peer_to_send]]) {
                             printf("<download_handler> request piece %d block %d from peer %s:%d\n", piece_idx, i,
                                    g_peers[seed_peer[peer_to_send]]->ip, g_peers[seed_peer[peer_to_send]]->port);
-                            usleep(7000);
                         }
                         UNLOCK_PEERS;
                     }
@@ -560,7 +554,7 @@ void *download_handler(void *arg) {
                 UNLOCK_PIECES;
             }
         } else {
-//            printf("<download_handler> No rarest piece found\n");
+            printf("<download_handler> No rarest piece found\n");
             sleep(3);
         }
         usleep(1000);
@@ -570,30 +564,12 @@ void *download_handler(void *arg) {
 
 void *transmission_monitor(void *arg) {
     printf("<transmission_monitor> Transmission monitor started\n");
-    pwp_msg *not_interested_msg = make_not_interested_msg();
-    int first_time = 1;
+    int cnt = 0;
+    char running_state[4] = {'-', '\\', '|', '/'};
     while (!g_done) {
-        if (g_left == 0 && first_time) {
-            printf("<peer_handler> Download complete\n");
-            // send not interested to all other peers
-            LOCK_PEERS;
-            for (int i = 0; i < MAXPEERS; ++i) {
-                if (g_peers[i] != NULL) {
-                    if (send_pwpmsg(g_peers[i]->sockfd, not_interested_msg) < 0) {
-                        perror("<transmission_monitor> Error: send");
-                    } else {
-                        printf("<transmission_monitor> send not interested to peer %s:%d\n", g_peers[i]->ip,
-                               g_peers[i]->port);
-                    }
-                }
-            }
-            UNLOCK_PEERS;
-            free_msg(not_interested_msg);
-            first_time = 0;
-        } else {
-            printf("<peer_handler> Uploaded: %d bytes, Downloaded: %d bytes, Left: %d bytes\n",
-                   g_uploaded, g_downloaded, g_left);
-        }
+        // print transmission info in the same line
+        printf("\r%c <transmission_monitor> Uploaded: %d bytes, Downloaded: %d bytes, Left: %d bytes\n",
+               running_state[cnt++ % 4], g_uploaded, g_downloaded, g_left);
         sleep(1);
     }
     return NULL;

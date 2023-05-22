@@ -7,5 +7,6 @@ void client_shutdown(int sig) {
     // 这控制了其他peer连接的套接字和连接到其他peer的线程.
     g_done = 1;
     // do some cleanup
-    fclose(g_file);
+    if (g_file)
+        fclose(g_file);
 }
