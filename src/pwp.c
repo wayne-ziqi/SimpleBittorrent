@@ -46,7 +46,7 @@ void *listen_for_peers(void *arg) {
         connfd = accept(listenfd, (struct sockaddr *) &clientaddr, &clientlen);
         if (connfd < 0) {
             printf("<listen_for_peers> Error: accept failed\n");
-            close(connfd);
+            sleep(1);
             continue;
         }
         printf("<listen_for_peers> Incoming connection from %s:%d\n", inet_ntoa(clientaddr.sin_addr),
@@ -156,21 +156,18 @@ void *peer_handler(void *arg) {
                     printf("<peer_handler> Peer %s:%d interested\n", peer->ip, peer->port);
                     // send unchoke
                     pwp_msg *unchoke_msg = make_unchoke_msg();
-                    int len = send_pwpmsg(peer->sockfd, unchoke_msg);
-                    if (len == -1) {
-                        printf("<peer_handler> Error: send unchoke failed\n");
-                        remove_peer(peer_idx);
-                        free_msg(msg);
-                        free_msg(unchoke_msg);
-                    } else {
-                        printf("<peer_handler> unchoke sent\n");
-                        peer->peer_interested = 1;
-                    }
-                    break;
+                    send_pwpmsg(peer->sockfd, unchoke_msg);
+                    printf("<peer_handler> unchoke sent\n");
+                    peer->peer_choking = 0;
+                    peer->peer_interested = 1;
+
                 }
                 case NOT_INTERESTED: {
                     printf("<peer_handler> Peer %s:%d not interested\n", peer->ip, peer->port);
                     peer->peer_interested = 0;
+                    // send choke
+                    printf("<peer_handler> choke sent\n");
+
                     break;
                 }
                 case HAVE: {
@@ -248,6 +245,11 @@ void *peer_handler(void *arg) {
 //                    print_peer_id(peer->id)
                     if (peer->peer_choking == 1) {
                         printf("<peer_handler> Error: peer choked\n");
+                        break;
+                    }
+
+                    if (peer->peer_interested == 0) {
+                        printf("<peer_handler> Error: peer not interested\n");
                         break;
                     }
                     assert(msg->len == 13);
@@ -342,6 +344,8 @@ void *connect_to_peers(void *arg) {
             sleep(1);
             continue;
         }
+        // FIXME: extract ip:port from tracker response and record number of connection fails,
+        // if fails too many times, remove it from extracted data
         LOCK_TRACKER_RESPONSE;
         for (int i = 0; i < g_tracker_response->numpeers; ++i) {
             if (strcmp(g_tracker_response->peers[i].ip, g_my_ip) == 0) {
@@ -438,6 +442,14 @@ void *connect_to_handshake_handler(void *arg) {
         *peer_idx_ptr = peer_idx;
         pthread_t peer_thread;
         pthread_create(&peer_thread, NULL, peer_handler, peer_idx_ptr);
+
+        // send bitfield
+        if (is_seed()) {
+            pwp_msg *msg = make_bitfield_msg(g_bitfield);
+            send_pwpmsg(sockfd, msg);
+            free(msg);
+            printf("<connect_to_peer> Sent bitfield to peer %s:%d\n", peer_ip, peer_port);
+        }
     }
     free(handshake_arg);
     return NULL;
@@ -568,7 +580,7 @@ void *transmission_monitor(void *arg) {
     char running_state[4] = {'-', '\\', '|', '/'};
     while (!g_done) {
         // print transmission info in the same line
-        printf("\r%c <transmission_monitor> Uploaded: %d bytes, Downloaded: %d bytes, Left: %d bytes\n",
+        printf("%c <transmission_monitor> Uploaded: %d bytes, Downloaded: %d bytes, Left: %d bytes\n",
                running_state[cnt++ % 4], g_uploaded, g_downloaded, g_left);
         sleep(1);
     }
