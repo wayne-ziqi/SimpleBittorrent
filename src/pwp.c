@@ -54,12 +54,10 @@ void *listen_for_peers(void *arg) {
         printf("<listen_for_peers> Incoming connection from %s:%d\n", inet_ntoa(clientaddr.sin_addr),
                ntohs(clientaddr.sin_port));
         if (!peer_ip_exist(inet_ntoa(clientaddr.sin_addr))) {
-            printf("<listen_for_peers> Error: peer is not recorded in tracker's response\n");
-            close(connfd);
-            continue;
+            printf("<listen_for_peers> Error: peer is not recorded in tracker's response, but we'll try anyway\n");
         }
         bzero(shake_pkt, sizeof(pwp_shaking_pkt));
-        ssize_t len = recv(connfd, shake_pkt, sizeof(pwp_shaking_pkt), 0);
+        ssize_t len = readn(connfd, shake_pkt, sizeof(pwp_shaking_pkt));
         if (len != sizeof(pwp_shaking_pkt)) {
             printf("<listen_for_peers> Error: read shaking packet failed\n");
             close(connfd);
@@ -76,6 +74,8 @@ void *listen_for_peers(void *arg) {
         *peer_idx = get_peer_idx_by_ip(inet_ntoa(clientaddr.sin_addr));
         UNLOCK_PEERS;
         if (*peer_idx == -1) {
+            char peer_id[PEER_ID_LEN];
+            memcpy(peer_id, shake_pkt->peer_id, PEER_ID_LEN);
             memcpy(shake_pkt->peer_id, g_my_id, PEER_ID_LEN);
             len = send(connfd, shake_pkt, sizeof(pwp_shaking_pkt), 0);
             if (len != sizeof(pwp_shaking_pkt)) {
@@ -93,8 +93,10 @@ void *listen_for_peers(void *arg) {
                 close(connfd);
                 continue;
             }
-            printf("<listen_for_peers> Peer %s:%d connected\n", inet_ntoa(clientaddr.sin_addr),
+            printf("<listen_for_peers> Peer %s:%d connecte, id: \n", inet_ntoa(clientaddr.sin_addr),
                    ntohs(clientaddr.sin_port));
+            print_peer_id(peer_id)
+            printf("\n");
             // start a new thread to handle this peer_idx
             pthread_t peer_thread;
             pthread_create(&peer_thread, NULL, peer_handler, peer_idx);
@@ -409,7 +411,7 @@ void *connect_to_handshake_handler(void *arg) {
     printf("<connect_to_peer> Sent handshake to peer %s:%d\n", peer_ip, peer_port);
     // recv handshake and fill peer id into peer_idx
     pwp_shaking_pkt handshake;
-    if (recv(sockfd, &handshake, HANDSHAKE_LEN, 0) < 0) {
+    if (readn(sockfd, &handshake, HANDSHAKE_LEN) < 0) {
         perror("<connect_to_peer> Error: recv");
         connect_to_handshake_handler_FAIL_RETURN
     }

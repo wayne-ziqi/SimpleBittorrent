@@ -27,12 +27,12 @@
 #define PIECE 7
 #define CANCEL 8
 
-/*
+
 #define print_peer_id(peer_id) \
     for (int peer_id_i = 0; peer_id_i < PEER_ID_LEN; ++peer_id_i) { \
         printf("%02x", peer_id[peer_id_i]); \
     }
-*/
+
 
 typedef struct pwp_shaking {
     uint8_t pstrlen; // string length of <pstr>, as a single raw byte

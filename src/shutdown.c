@@ -11,8 +11,11 @@ void client_shutdown(int sig) {
         fclose(g_file);
     int mlen;
     char *MESG = make_tracker_request(BT_STOPPED, &mlen);
+    printf("<client_shutdown> connect to tracker\n");
     int sockfd = connect_to_host(g_tracker_ip, g_tracker_port);
+    printf("<client_shutdown> send stopped to tracker\n");
     send(sockfd, MESG, mlen, 0);
+    printf("<client_shutdown> close tracker\n");
     close(sockfd);
     free(MESG);
 }
