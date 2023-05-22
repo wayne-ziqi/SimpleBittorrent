@@ -46,6 +46,8 @@ void *listen_for_peers(void *arg) {
         connfd = accept(listenfd, (struct sockaddr *) &clientaddr, &clientlen);
         if (connfd < 0) {
             printf("<listen_for_peers> Error: accept failed\n");
+            close(listenfd);
+            listenfd = make_listen_port(g_peerport);
             sleep(1);
             continue;
         }
@@ -129,7 +131,7 @@ void *peer_handler(void *arg) {
         bzero(msg, sizeof(pwp_msg));
         int msg_len = recv_pwpmsg(peer->sockfd, msg);
         if (msg_len == -1) {
-            printf("<peer_handler> Error: recv_pwpmsg failed\n");
+            printf("<peer_handler> closing peer %s:%d\n", peer->ip, peer->port);
             LOCK_PEERS;
             remove_peer(peer_idx);
             UNLOCK_PEERS;
@@ -165,9 +167,7 @@ void *peer_handler(void *arg) {
                 case NOT_INTERESTED: {
                     printf("<peer_handler> Peer %s:%d not interested\n", peer->ip, peer->port);
                     peer->peer_interested = 0;
-                    // send choke
-                    printf("<peer_handler> choke sent\n");
-
+                    // don't send choke
                     break;
                 }
                 case HAVE: {
@@ -207,6 +207,7 @@ void *peer_handler(void *arg) {
                         remove_peer(peer_idx);
                         break;
                     }
+
                     bitfield_t *msg_bitfield = bitfield_create_from_string(msg->payload, g_bitfield->size);
                     for (int i = 0; i < g_bitfield->size; ++i) {
                         if (bitfield_get(msg_bitfield, i)) {
@@ -216,6 +217,15 @@ void *peer_handler(void *arg) {
                         }
                     }
                     bitfield_free(msg_bitfield);
+
+                    // seed<->seed detection
+                    if (is_seed() && bitfield_full(peer->bitfield)) {
+                        printf("<peer_handler> seed<->seed detected\n");
+                        // add peer to seed list
+                        remove_peer(peer_idx);
+                        break;
+                    }
+
                     if (bitfield_all_set(g_bitfield, peer->bitfield)) {
                         if (peer->am_interested) {
                             peer->am_interested = 0;
@@ -225,6 +235,8 @@ void *peer_handler(void *arg) {
                             printf("<peer_handler> not interested to peer %s:%d sent\n", peer->ip, peer->port);
 //                            print_peer_id(peer->id)
 //                            printf(" sent\n");
+                            // close connection
+                            break;
                         }
                     } else {
                         if (!peer->am_interested) {
@@ -234,8 +246,6 @@ void *peer_handler(void *arg) {
                             send_pwpmsg(peer->sockfd, interested_msg);
                             free_msg(interested_msg);
                             printf("<peer_handler> interested to peer %s:%d sent\n", peer->ip, peer->port);
-//                            print_peer_id(peer->id)
-//                            printf(" sent\n");
                         }
                     }
                     break;
@@ -249,8 +259,8 @@ void *peer_handler(void *arg) {
                     }
 
                     if (peer->peer_interested == 0) {
-                        printf("<peer_handler> Error: peer not interested\n");
-                        break;
+                        peer->peer_interested = 1;
+                        printf("<peer_handler> peer not interested, set to interested\n");
                     }
                     assert(msg->len == 13);
                     int piece_idx, block_offset, block_len;
@@ -368,7 +378,7 @@ void *connect_to_peers(void *arg) {
             pthread_create(&handshake_thread, NULL, connect_to_handshake_handler, (void *) handshake_arg);
         }
         UNLOCK_TRACKER_RESPONSE;
-        sleep(1);
+        sleep(5);
     }
     return NULL;
 }
@@ -382,21 +392,9 @@ void *connect_to_handshake_handler(void *arg) {
     struct handshake_arg_t *handshake_arg = (struct handshake_arg_t *) arg;
     int peer_port = handshake_arg->port;
     char *peer_ip = handshake_arg->ip;
-    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    int sockfd = connect_to_host(peer_ip, peer_port);
     if (sockfd < 0) {
-        perror("<connect_to_peer> Error: socket");
-        connect_to_handshake_handler_FAIL_RETURN
-    }
-    struct sockaddr_in peer_addr;
-    bzero(&peer_addr, sizeof(peer_addr));
-    peer_addr.sin_family = AF_INET;
-    peer_addr.sin_port = htons(peer_port);
-    if (inet_pton(AF_INET, peer_ip, &peer_addr.sin_addr) <= 0) {
-        perror("<connect_to_peer> Error: inet_pton");
-        connect_to_handshake_handler_FAIL_RETURN;
-    }
-    if (connect(sockfd, (struct sockaddr *) &peer_addr, sizeof(peer_addr)) < 0) {
-        perror("<connect_to_peer> Error: connect");
+        printf("<connect_to_peer> Error: connect to peer %s:%d\n", peer_ip, peer_port);
         connect_to_handshake_handler_FAIL_RETURN
     }
     int reversed_info_hash[5];
@@ -458,8 +456,9 @@ void *connect_to_handshake_handler(void *arg) {
 void *download_handler(void *arg) {
     printf("<download_handler> Download handler started\n");
     bitfield_t *oldField = bitfield_copy(g_bitfield);
+    int first_time = 1;
     while (!g_done) {
-        // check if all pieces are downloaded
+        // check if pieces from specific peer are downloaded
         LOCK_PEERS;
         for (int i = 0; i < MAXPEERS; ++i) {
             if (g_peers[i] == NULL)continue;
@@ -472,14 +471,35 @@ void *download_handler(void *arg) {
             }
         }
         UNLOCK_PEERS;
-
+        // check if all pieces are downloaded
         if (is_seed()) {
             LOCK_VARIABLE;
             if (g_file != NULL) {
                 fclose(g_file);
                 g_file = NULL;
             }
+            if (first_time) {
+                // send to tracker
+                printf("<download_handler> Download complete, connect to tracker\n");
+                int sockfd = connect_to_host(g_tracker_ip, g_tracker_port);
+                if (sockfd < 0) {
+                    printf("<download_handler> Error: connect to tracker\n");
+                } else {
+                    int msg_len;
+                    char *msg = make_tracker_request(BT_COMPLETED, &msg_len);
+                    if (send(sockfd, msg, msg_len, MSG_NOSIGNAL) < 0) {
+                        perror("<download_handler> Error: send complete msg to tracker");
+                    }
+                    free(msg);
+                    printf("<download_handler> close tracker\n");
+                    close(sockfd);
+                }
+                first_time = 0;
+            }
+
             UNLOCK_VARIABLE;
+
+
             sleep(5);
             continue;
         }

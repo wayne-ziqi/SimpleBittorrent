@@ -9,4 +9,10 @@ void client_shutdown(int sig) {
     // do some cleanup
     if (g_file)
         fclose(g_file);
+    int mlen;
+    char *MESG = make_tracker_request(BT_STOPPED, &mlen);
+    int sockfd = connect_to_host(g_tracker_ip, g_tracker_port);
+    send(sockfd, MESG, mlen, 0);
+    close(sockfd);
+    free(MESG);
 }
