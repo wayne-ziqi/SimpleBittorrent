@@ -184,6 +184,7 @@ void *peer_handler(void *arg) {
                     memcpy(&piece_idx, msg->payload, sizeof(int));
                     piece_idx = reverse_byte_orderi(piece_idx);
                     printf(" have piece %d\n", piece_idx);
+                    bitfield_set(peer->bitfield, piece_idx);
                     if (!bitfield_get(g_bitfield, piece_idx)) {
                         if (!peer->am_interested) {
                             // send interested
