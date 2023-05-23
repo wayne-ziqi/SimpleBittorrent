@@ -318,9 +318,9 @@ void *peer_handler(void *arg) {
                     piece_set_block(piece, block_offset, block_len);
                     if (piece_full(piece)) {
                         UNLOCK_PIECES;
-//#ifdef DEBUG
+#ifdef DEBUG
                         printf("<peer_handler> Piece #%d fully downloaded\n", piece_idx);
-//#endif
+#endif
                         LOCK_BITFIELD;
                         bitfield_set(g_bitfield, piece_idx);
                         UNLOCK_BITFIELD;
@@ -356,7 +356,6 @@ void *peer_handler(void *arg) {
                     int piece_idx, block_offset, block_len;
                     extract_request_info(msg, &piece_idx, &block_offset, &block_len);
                     printf("<peer_handler> cancel piece %d, offset %d, len %d\n", piece_idx, block_offset, block_len);
-                    // TODO: cancel logic in end game
                     break;
                 }
                 default:
@@ -376,7 +375,6 @@ void *connect_to_peers(void *arg) {
             sleep(1);
             continue;
         }
-        // FIXME: extract ip:port from tracker response and record number of connection fails,
         // if fails too many times, remove it from extracted data
         LOCK_TRACKER_RESPONSE;
         for (int i = 0; i < g_tracker_response->numpeers; ++i) {
@@ -400,7 +398,7 @@ void *connect_to_peers(void *arg) {
             pthread_create(&handshake_thread, NULL, connect_to_handshake_handler, (void *) handshake_arg);
         }
         UNLOCK_TRACKER_RESPONSE;
-        sleep(5);
+        sleep(10);
     }
     return NULL;
 }
@@ -515,6 +513,13 @@ void *download_handler(void *arg) {
                     printf("<download_handler> close tracker\n");
                     close(sockfd);
                 }
+                // check if *.bf file exists and delete it
+                char bf_file_name[256];
+                sprintf(bf_file_name, "%s.bf", g_torrent_file_name);
+                if (access(bf_file_name, F_OK) != -1) {
+                    printf("<download_handler> Delete *.bf file\n");
+                    remove(bf_file_name);
+                }
                 first_time = 0;
             }
 
@@ -583,7 +588,7 @@ void *download_handler(void *arg) {
             }
         } else {
             printf("<download_handler> No rarest piece found\n");
-            sleep(3);
+            sleep(1);
         }
         usleep(1000);
     }
@@ -597,12 +602,12 @@ void *transmission_monitor(void *arg) {
     int last_downloaded = g_downloaded;
     int last_uploaded = g_uploaded;
     while (!g_done) {
-        // print transmission info in the same line
+        // print transmission info on the same line
         int download_speed_kbps = (g_downloaded - last_downloaded) / 1024;
         last_downloaded = g_downloaded;
         int upload_speed_kbps = (g_uploaded - last_uploaded) / 1024;
         last_uploaded = g_uploaded;
-#ifdef VERBOSE
+#ifdef DEBUG
         printf("%c <transmission_monitor> Up: %dB(%dKB/s), Down: %dB(%dKB/s), Left: %dB\n",
                running_state[cnt], g_uploaded, upload_speed_kbps, g_downloaded, download_speed_kbps, g_left);
 #else

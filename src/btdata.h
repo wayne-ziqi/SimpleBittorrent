@@ -1,6 +1,7 @@
 
 #include <pthread.h>
 #include <stdio.h>
+#include <stdint.h>
 #include "bencode.h"
 #include "bitfield.h"
 #include "pwp.h"
@@ -35,7 +36,7 @@ typedef struct _torrentmetadata {
     char *name;     // 文件名
     int piece_len;  // 每一个分片的字节数
     int num_pieces; // 分片数量
-    char *pieces;   // 针对所有分片的20字节长的SHA1哈希值连接而成的字符串
+    uint8_t *pieces;   // 针对所有分片的20字节长的SHA1哈希值连接而成的字符串
 } torrentmetadata_t;
 
 // 包含在announce url中的数据(例如, 主机名和端口号)
@@ -101,6 +102,7 @@ int g_filelen;  // 要下载的文件的长度
 int g_num_pieces;   // 分片数量
 int g_piece_len;    // 每个分片的字节数
 char *g_filename;   // 要下载的文件的文件名
+char* g_torrent_file_name;  // 元信息文件的文件名
 
 char g_tracker_ip[16]; // tracker的IP地址, 格式为XXX.XXX.XXX.XXX(null终止)
 int g_tracker_port;

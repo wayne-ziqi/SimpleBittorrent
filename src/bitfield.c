@@ -100,6 +100,14 @@ int bitfield_empty(bitfield_t *bitfield) {
     return 1;
 }
 
+void bitfield_flush(bitfield_t *bitfield) {
+    memset(bitfield->bitfield, 0, BITFIELD_SIZE(bitfield->size));
+}
+
+void bitfield_fill(bitfield_t *bitfield) {
+    memset(bitfield->bitfield, 0xff, BITFIELD_SIZE(bitfield->size));
+}
+
 void bitfield_xor(bitfield_t *dst, bitfield_t *src) {
     assert(dst->size == src->size);
     for (int i = 0; i < src->size; ++i) {

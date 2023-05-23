@@ -76,6 +76,17 @@ void bitfield_xor(bitfield_t *dst, bitfield_t *src);
 int bitfield_empty(bitfield_t *bitfield);
 
 /**
+ * flush the bitfield with 0
+ */
+void bitfield_flush(bitfield_t *bitfield);
+
+/**
+ * fill the bitfield with 1
+ */
+void bitfield_fill(bitfield_t *bitfield);
+
+
+/**
  * count the number of bits that are set
  */
 int bitfield_count(bitfield_t *bitfield);

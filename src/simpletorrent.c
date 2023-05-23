@@ -10,6 +10,7 @@
 #include "btdata.h"
 #include "bencode.h"
 #include "pwp.h"
+#include "sha1.h"
 
 //#define MAXLINE 4096
 // pthread数据
@@ -50,44 +51,151 @@ void init(int argc, char **argv) {
     g_my_ip[strlen(argv[2]) + 1] = '\0';
     g_peerport = 2706;
     g_filename = argv[3];
+    g_torrent_file_name = argv[1];
+    // check if g_torrent_file_name end with .torrent
+    size_t len = strlen(g_torrent_file_name);
+    if (len < 8 || strcmp(g_torrent_file_name + len - 8, ".torrent") != 0) {
+        printf("<init> torrent file name error\n");
+        exit(-1);
+    } else if (access(g_torrent_file_name, F_OK) == -1) {
+        printf("<init> torrent file not exist\n");
+        exit(-1);
+    }
 
     // initialize torrent meta info
-    g_torrentmeta = parsetorrentfile(argv[1]);
+    g_torrentmeta = parsetorrentfile(g_torrent_file_name);
     memcpy(g_infohash, g_torrentmeta->info_hash, 20);
     g_filelen = g_torrentmeta->length;
     g_num_pieces = g_torrentmeta->num_pieces;
     g_piece_len = g_torrentmeta->piece_len;
 
+    // initialize bitfield
+    g_bitfield = bitfield_create(g_num_pieces);
+    pthread_mutex_init(&g_bitfield_lock, NULL);
+
     if (access(argv[3], F_OK) != -1) {
-        g_left = 0;
-        g_downloaded = g_filelen;
-        g_file = fopen(argv[3], "r+");
-        if (g_file == NULL) {
-            printf("<init>: fopen error\n");
-            exit(-1);
+        // check if *.bf exists, if so, load it and set bitfield, left, downloaded
+        // else g_left = 0, g_downloaded = g_filelen
+        char bf_file[256];
+        strcpy(bf_file, g_torrent_file_name);
+        strcat(bf_file, ".bf");
+        if (access(bf_file, F_OK) != -1) {
+            FILE *fp = fopen(bf_file, "rb");
+            if (fp == NULL) {
+                printf("<init>: fopen bf file error\n");
+                exit(-1);
+            }
+            printf("<init>: loading bitfield from %s\n", bf_file);
+            fseek(fp, 0, SEEK_END);
+            int bf_size = (int) ftell(fp);
+            fseek(fp, 0, SEEK_SET);
+            uint8_t *bf = (uint8_t *) malloc(sizeof(uint8_t) * bf_size);
+            fread(bf, sizeof(uint8_t), bf_size, fp);
+            fclose(fp);
+            fp = NULL;
+            if (bf_size != g_num_pieces) {
+                printf("<init>: bitfield size error, delete the .bf file and restart\n");
+                exit(-1);
+            }
+            for (int i = 0; i < g_num_pieces; ++i) {
+                g_bitfield->bitfield[i] = bf[i];
+            }
+            g_downloaded = 0, g_left = 0;
+            for (int i = 0; i < g_bitfield->size; ++i) {
+                int piece_len = g_piece_len;
+                if (i == g_bitfield->size - 1) {
+                    piece_len = g_filelen - (g_bitfield->size - 1) * g_piece_len;
+                }
+                if (bitfield_get(g_bitfield, i)) {
+                    g_downloaded += piece_len;
+                } else {
+                    g_left += piece_len;
+                }
+            }
+            free(bf);
+            if (is_seed()) {
+                printf("<init> File is complete, running as seed\n");
+                // remove .bf file
+                remove(bf_file);
+            } else {
+                printf("<init> File is not complete, running as client, left: %dB, downloaded: %dB\n", g_left,
+                       g_downloaded);
+            }
+        } else {
+            g_left = 0;
+            g_downloaded = g_filelen;
+            bitfield_fill(g_bitfield);
+            g_file = fopen(argv[3], "r+");
+            if (g_file == NULL) {
+                printf("<init>: fopen error\n");
+                exit(-1);
+            }
+            // checking file integrity
+            int piece_len = g_piece_len;
+            int num_pieces = g_num_pieces;
+            int file_len = g_filelen;
+            int last_piece_len = file_len % piece_len;
+            if (last_piece_len == 0) {
+                last_piece_len = piece_len;
+            }
+            fseek(g_file, 0, SEEK_SET);
+            SHA1Context sha;
+            printf("<init>: data file found, checking file integrity...\n");
+            for (int i = 0; i < num_pieces; ++i) {
+                if (i == num_pieces - 1) {
+                    piece_len = last_piece_len;
+                }
+                uint8_t *piece = (uint8_t *) malloc(sizeof(uint8_t) * piece_len);
+                fread(piece, sizeof(uint8_t), piece_len, g_file);
+                SHA1Reset(&sha);
+                SHA1Input(&sha, (uint8_t *) piece, piece_len);
+                if (!SHA1Result(&sha)) {
+                    printf("<init>: SHA1Result error\n");
+                    exit(-1);
+                }
+
+                int piece_hash[5];
+                memcpy(piece_hash, g_torrentmeta->pieces + 20 * i, 20);
+                for (int j = 0; j < 5; ++j) {
+                    piece_hash[j] = reverse_byte_orderi(piece_hash[j]);
+                }
+                if (memcmp(sha.Message_Digest, piece_hash, 20) != 0) {
+                    printf("<init>: file integrity check failed, please delete and download again\n");
+                    printf("<init> piece #%d expected: ", i);
+                    for (int j = 0; j < 20; ++j) {
+                        printf("%02x", g_torrentmeta->pieces[20 * i + j]);
+                    }
+                    printf(" got: ");
+                    for (int j = 0; j < 5; ++j) {
+                        printf("%02x", sha.Message_Digest[j]);
+                    }
+                    printf("\n");
+                    exit(-1);
+                } else {
+                    printf("\r<init> check passed [%d]", i + 1);
+                    fflush(stdout);
+                }
+                free(piece);
+            }
+            printf("\n<init> file check complete, running as seed.\n");
         }
-        printf("File already exists, running as seed.\n");
+
     } else {
         g_left = g_filelen;
         g_downloaded = 0;
+        bitfield_flush(g_bitfield);
+        // create and open file
         int err = create_empty_file(argv[3], g_filelen, &g_file);
         if (err < 0) {
-            printf("<init>: create_empty_file error\n");
+            printf("<init> create_empty_file error\n");
             exit(-1);
         }
-        printf("File does not exist, running as client.\n");
+        printf("<init> File does not exist, running as client.\n");
     }
 
-    // initialize bitfield and pieces
-    g_bitfield = bitfield_create(g_num_pieces);
-    pthread_mutex_init(&g_bitfield_lock, NULL);
-    for (int i = 0; i < g_bitfield->size; ++i) {
-        if (is_seed()) {
-            bitfield_set(g_bitfield, i);
-        } else {
-            bitfield_clear(g_bitfield, i);
-        }
-    }
+    // initialize pieces
+
+
     g_pieces = (piece_t **) malloc(sizeof(piece_t *) * g_num_pieces);
     pthread_mutex_init(&g_pieces_lock, NULL);
     for (int i = 0; i < g_num_pieces; ++i) {
@@ -237,6 +345,7 @@ int main(int argc, char **argv) {
 
     // 睡眠以等待其他线程关闭它们的套接字, 只有在用户按下ctrl-c时才会到达这里
     printf("Application shutting down...\n");
-    sleep(2);
+    sleep(5);
+    printf("bye\n");
     exit(0);
 }

@@ -36,11 +36,11 @@ void piece_set_block(piece_t *piece, int offset, int length) {
     }
 }
 
-int get_expected_block_length(piece_t *piece, int index){
+int get_expected_block_length(piece_t *piece, int index) {
     assert(index < piece->num_blocks);
-    if(index == piece->num_blocks - 1){
+    if (index == piece->num_blocks - 1) {
         return piece->length - (piece->num_blocks - 1) * BLOCK_SIZE;
-    }else{
+    } else {
         return BLOCK_SIZE;
     }
 }
@@ -54,12 +54,18 @@ int get_rarest_piece_index() {
     int minIndex = -1;
     for (int i = 0; i < g_num_pieces; ++i) {
         int curCnt = 0x7fffffff;
+        LOCK_VARIABLE;
+        if (g_bitfield && bitfield_get(g_bitfield, i)) {
+            UNLOCK_VARIABLE;
+            continue;
+        }
+        UNLOCK_VARIABLE;
         LOCK_PEERS;
         for (int j = 0; j < MAXPEERS; ++j) {
             if (g_peers[j] && bitfield_get(g_peers[j]->bitfield, i)) {
                 if (curCnt == 0x7fffffff) {
                     curCnt = 1;
-                }else{
+                } else {
                     curCnt++;
                 }
             }

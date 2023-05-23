@@ -18,4 +18,17 @@ void client_shutdown(int sig) {
     printf("<client_shutdown> close tracker\n");
     close(sockfd);
     free(MESG);
+
+    // if download is not finished, save the global state to file *.bf under the same directory of the torrent file
+    if (!is_seed()) {
+        sleep(1); // wait for other threads to finish
+        char bf_file[256];
+        strcpy(bf_file, g_torrent_file_name);
+        strcat(bf_file, ".bf");
+        printf("<client_shutdown> save bitfield to file %s\n", bf_file);
+        FILE *fp = fopen(bf_file, "wb");
+        fwrite(g_bitfield->bitfield, sizeof(uint8_t), g_bitfield->size, fp);
+        fclose(fp);
+        printf("<client_shutdown> bitfield saved\n");
+    }
 }

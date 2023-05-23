@@ -100,7 +100,7 @@ torrentmetadata_t *parsetorrentfile(char *filename) {
                     int num_pieces = ret->length / ret->piece_len;
                     if (ret->length % ret->piece_len != 0)
                         num_pieces++;
-                    ret->pieces = (char *) malloc(num_pieces * 20);
+                    ret->pieces = (uint8_t *) malloc(num_pieces * 20);
                     memcpy(ret->pieces, idict[j].val->val.s, num_pieces * 20);
                     ret->num_pieces = num_pieces;
                     filled++;
