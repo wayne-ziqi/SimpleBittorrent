@@ -61,18 +61,8 @@ void bitfield_clear(bitfield_t *bitfield, int index) {
 }
 
 int bitfield_full(bitfield_t *bitfield) {
-    for (int i = 0; i < bitfield->size; i++) {
+    for (int i = 0; i < bitfield->size; ++i) {
         if (bitfield_get(bitfield, i) == 0) {
-            return 0;
-        }
-    }
-    return 1;
-}
-
-int bitfield_all_set(bitfield_t *dst, bitfield_t *src) {
-    assert(dst->size == src->size);
-    for (int i = 0; i < src->size; i++) {
-        if (bitfield_get(src, i) == 1 && bitfield_get(dst, i) == 0) {
             return 0;
         }
     }
@@ -81,7 +71,7 @@ int bitfield_all_set(bitfield_t *dst, bitfield_t *src) {
 
 int bitfield_have_all_from(bitfield_t *dst, bitfield_t *src) {
     assert(dst->size == src->size);
-    for (int i = 0; i < src->size; i++) {
+    for (int i = 0; i < src->size; ++i) {
         if (bitfield_get(src, i) == 1 && bitfield_get(dst, i) == 0) {
             return 0;
         }
@@ -92,7 +82,7 @@ int bitfield_have_all_from(bitfield_t *dst, bitfield_t *src) {
 int *bitfield_get_set_indexes(bitfield_t *bitfield, int *size) {
     int *indexes = malloc(sizeof(int) * bitfield->size);
     int count = 0;
-    for (int i = 0; i < bitfield->size; i++) {
+    for (int i = 0; i < bitfield->size; ++i) {
         if (bitfield_get(bitfield, i) == 1) {
             indexes[count++] = i;
         }
@@ -102,7 +92,7 @@ int *bitfield_get_set_indexes(bitfield_t *bitfield, int *size) {
 }
 
 int bitfield_empty(bitfield_t *bitfield) {
-    for (int i = 0; i < bitfield->size; i++) {
+    for (int i = 0; i < bitfield->size; ++i) {
         if (bitfield_get(bitfield, i) == 1) {
             return 0;
         }
@@ -112,7 +102,7 @@ int bitfield_empty(bitfield_t *bitfield) {
 
 void bitfield_xor(bitfield_t *dst, bitfield_t *src) {
     assert(dst->size == src->size);
-    for (int i = 0; i < src->size; i++) {
+    for (int i = 0; i < src->size; ++i) {
         if (bitfield_get(dst, i) == bitfield_get(src, i)) {
             bitfield_clear(dst, i);
         } else {
@@ -123,7 +113,7 @@ void bitfield_xor(bitfield_t *dst, bitfield_t *src) {
 
 int bitfield_count(bitfield_t *bitfield) {
     int count = 0;
-    for (int i = 0; i < bitfield->size; i++) {
+    for (int i = 0; i < bitfield->size; ++i) {
         if (bitfield_get(bitfield, i) == 1) {
             count++;
         }
@@ -140,7 +130,7 @@ int bitfield_compare(bitfield_t *bitfield1, bitfield_t *bitfield2) {
     if (bitfield1->size != bitfield2->size) {
         return 0;
     }
-    for (int i = 0; i < bitfield1->size; i++) {
+    for (int i = 0; i < bitfield1->size; ++i) {
         if (bitfield_get(bitfield1, i) != bitfield_get(bitfield2, i)) {
             return 0;
         }

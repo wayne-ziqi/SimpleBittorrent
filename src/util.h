@@ -15,6 +15,9 @@
 #include "btdata.h"
 #include "bencode.h"
 
+//#define VERBOSE
+//#define DEBUG
+
 #ifndef UTIL_H
 #define UTIL_H
 
