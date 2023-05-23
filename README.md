@@ -96,8 +96,18 @@ http://ip_address:portnum/announce
   保存SHA_DIGEST_LENGTH=20个字节. 更详细的信息参见"man SHA1".
   在编译时, 需要添加"-lcrypto"选项来链接openssl.
 
-## Test commands
-We use 4 docker containers called host1, host2, host3, host4, whose ip addresses are 172.18.0.2 to 172.18.0.5 correspondingly. Host1 is the tracker server, and host2, host3, host4 are the clients.
+## Deploy and Test commands
+
+We use 4 docker containers called host1, host2, host3, host4, whose ip addresses are 172.18.0.2 to 172.18.0.5 correspondingly. 
+
+```shell
+docker run -it -d --name host1 --hostname host1 --network lab5-net rhub/ubuntu-gcc 
+docker run -it -d --name host2 --hostname host2 --network lab5-net rhub/ubuntu-gcc
+docker run -it -d --name host3 --hostname host3 --network lab5-net rhub/ubuntu-gcc
+docker run -it -d --name host4 --hostname host4 --network lab5-net rhub/ubuntu-gcc
+```
+
+Host1 is the tracker server, and host2, host3, host4 are the clients.
 We test the scenario that host3 is the seeder and host2, host4 are the leechers, but host4 will be launched a bit later than host2.
 Then we will see host2 and host4 will download the file from host3 while host4 is also downloading the file from host2.
 
