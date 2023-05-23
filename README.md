@@ -1,3 +1,4 @@
+## Guide
 
 SimpleTorrent代码框架:
 
@@ -94,6 +95,26 @@ http://ip_address:portnum/announce
   参数d指向需要计算哈希值的数据, n是数据的长度(以字节为单位), md指向计算好的哈希值. 你需要为md分配空间, 并且它至少能
   保存SHA_DIGEST_LENGTH=20个字节. 更详细的信息参见"man SHA1".
   在编译时, 需要添加"-lcrypto"选项来链接openssl.
+
+## Test commands
+We use 4 docker containers called host1, host2, host3, host4, whose ip addresses are 172.18.0.2 to 172.18.0.5 correspondingly. Host1 is the tracker server, and host2, host3, host4 are the clients.
+We test the scenario that host3 is the seeder and host2, host4 are the leechers, but host4 will be launched a bit later than host2.
+Then we will see host2 and host4 will download the file from host3 while host4 is also downloading the file from host2.
+
+```shell
+# Start the tracker server
+cd /usr/lab5/ && ./tools/tracker.debug -i 172.18.0.2 -p 6969
+# Make .torrent and share to all hosts
+./tools/bittorrent -t ./data/huge.pdf -s huge.torrent -u http://172.18.0.2:6969/announce && mv huge.torrent ./torrents/huge.torrent 
+# Start the seeder, use reference client, but you can also use our client
+cd /usr/lab5/ && ./tools/bittorrent ./torrents/huge.torrent
+# Start the leecher1 on host2
+cd /usr/lab5/ && make clean && make && touch ./data/huge.pdf && rm ./data/huge.pdf && \ 
+./bin/simpletorrent ./torrents/huge.torrent 172.18.0.3 ./data/huge.pdf
+# Start the leecher2 on host4
+cd /usr/lab5/ && make clean && make && touch ./data/huge.pdf && rm ./data/huge.pdf && \
+./bin/simpletorrent ./torrents/huge.torrent 172.18.0.5 ./data/huge.pdf
+```
 
 
 
