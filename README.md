@@ -108,7 +108,7 @@ docker run -it -d --name host4 --hostname host4 --network lab5-net rhub/ubuntu-g
 ```
 
 Host1 is the tracker server, and host2, host3, host4 are the clients.
-We test the scenario that host3 is the seeder and host2, host4 are the leechers, but host4 will be launched a bit later than host2.
+We test the scenario where host3 is the seeder and host2, host4 are the leechers, but host4 will be launched a bit later than host2.
 Then we will see host2 and host4 will download the file from host3 while host4 is also downloading the file from host2.
 
 ```shell

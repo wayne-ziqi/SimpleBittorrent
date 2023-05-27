@@ -690,6 +690,7 @@ int peer_ip_exist(char *ip) {
     LOCK_TRACKER_RESPONSE;
     for (int i = 0; i < g_tracker_response->numpeers; ++i) {
         if (strcmp(g_tracker_response->peers[i].ip, ip) == 0) {
+            UNLOCK_TRACKER_RESPONSE;
             return 1;
         }
     }
